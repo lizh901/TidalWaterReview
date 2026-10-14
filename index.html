@@ -1197,11 +1197,11 @@ const EXAMPLE = {
 };
 
 /* ---------- state ---------- */
-// Kay (10/13/2026): new filings start at MHW9755, so the next number is never below that.
-const FILING_FLOOR = 9754;
+// Used only when the master list can't be read (Kay, 10/14/2026: next is MHW9756).
+const FILING_FLOOR = 9755;
 // The highest filing number used on this computer is remembered, so the next submission always gets the next number,
 // even after the app is closed. A newer master list with higher numbers still wins.
-function noteUsed(n) { n = +n || 0; if (!n) return; S.masterMax = Math.max(S.masterMax, n); storeSet("mhw.lastFiling", String(Math.max(n, +storeGet("mhw.lastFiling") || 0))); }
+function noteUsed(n) { n = +n || 0; if (!n) return; S.usedThisSession = Math.max(S.usedThisSession || 0, n); S.masterMax = Math.max(S.masterMax, n); storeSet("mhw.lastFiling", String(Math.max(n, +storeGet("mhw.lastFiling") || 0))); }
 const S = {
   data: null, masterMax: 0, psm: {}, files: {}, survey: null, placements: [], sheet: 0, example: false,
   check: Object.fromEntries(CHECKS.map(c => [c.id, null])), notes: {}, auto: {}, downloads: undefined, live: {},
@@ -2197,8 +2197,11 @@ async function loadFolder() {
   renderFolder(); if (S.folder) masterFromFolder();
 }
 // Reads the newest Master MHW List in the folder so the next filing number matches it.
-async function masterFromFolder() {
-  try { const root = S.folder; if (!root || (await root.queryPermission({ mode: "readwrite" })) !== "granted") return; let best = null;
+async function masterFromFolder(ask) {
+  try { const root = S.folder; if (!root) return;
+    let perm = await root.queryPermission({ mode: "readwrite" });
+    if (perm !== "granted" && ask) perm = await root.requestPermission({ mode: "readwrite" });
+    S.folderOk = perm === "granted"; renderFolder(); if (!S.folderOk) return; let best = null;
     for await (const [n, h] of root.entries()) if (h.kind === "file" && /^Master MHW List.*\.xls[xm]$/i.test(n)) { const f = await h.getFile(); if (!best || f.lastModified > best.lastModified) best = f; }
     if (best) await loadMaster(best, true);
   } catch (e) { console.error(e); }
@@ -2212,8 +2215,10 @@ function renderFolder() {
     txt.innerHTML = `<strong>Files save to Downloads.</strong> ${why} To save straight into F:\\BSM\\MHW Section, open the downloaded copy (MHW Review.html) in Edge or Chrome.`;
     $("folderInfo").textContent = "To save straight into these folders instead of Downloads, open the downloaded copy (MHW Review.html) in Edge or Chrome."; return;
   }
-  bar.className = "savebar " + (S.folder ? "on" : "off"); bb.hidden = false; bb.textContent = S.folder ? "Change folder" : "Choose the MHW Section folder";
-  txt.innerHTML = S.folder ? `<strong>Saving into ${escapeHtml(S.folder.name)}.</strong> Every Save button puts its file in the right folder inside it.` : "<strong>Files will save to Downloads</strong> until you choose the MHW Section folder.";
+  const needOk = S.folder && !S.folderOk;
+  bar.className = "savebar " + (S.folder && !needOk ? "on" : "off"); bb.hidden = false; bb.textContent = needOk ? "Reconnect the folder" : S.folder ? "Change folder" : "Choose the MHW Section folder";
+  txt.innerHTML = needOk ? `<strong>Click Reconnect, then Allow,</strong> so the app can read the master list for the next filing number and save into ${escapeHtml(S.folder.name)}.`
+    : S.folder ? `<strong>Saving into ${escapeHtml(S.folder.name)}.</strong> The filing number comes from ${escapeHtml(S.masterSource || "the master list")}.` : "<strong>Files will save to Downloads</strong> until you choose the MHW Section folder.";
   $("btnFolder").textContent = S.folder ? "Change folder" : "Choose the MHW Section folder";
   $("folderInfo").innerHTML = S.folder ? `Saving into <strong>${escapeHtml(S.folder.name)}</strong>. <button class="linkish" type="button" id="btnFolderOff">Use Downloads instead</button>`
     : "Choose F:\\BSM\\MHW Section once. After that every Save button puts its file straight into the folders above instead of Downloads.";
@@ -2234,7 +2239,7 @@ function pickFolder() {
         if (await hasDir(h, "MHW Section")) h = await h.getDirectoryHandle("MHW Section");
         else { fail(`"${h.name}" isn't the MHW Section folder (it has no "MHW Files By County" folder in it). Try again and pick MHW Section itself.`); return; }
       }
-      S.folder = h; S.folderDeclined = false; try { await idb("readwrite", st => st.put(h, "root")); } catch (e) {}
+      S.folder = h; S.folderOk = true; S.folderDeclined = false; try { await idb("readwrite", st => st.put(h, "root")); } catch (e) {}
       renderFolder(); toast(`Files will save into ${h.name}`); done(true); masterFromFolder();
     };
     const onSkip = (e) => { if (e) e.preventDefault(); S.folderDeclined = true; done(false); };
@@ -2254,6 +2259,7 @@ function folderTargets(kind) {
 async function saveToFolders(kind, bytes, nameOverride) {
   const root = S.folder; if (!root) return false;
   if ((await root.queryPermission({ mode: "readwrite" })) !== "granted" && (await root.requestPermission({ mode: "readwrite" })) !== "granted") return false;
+  if (!S.folderOk) { S.folderOk = true; renderFolder(); }
   const targets = folderTargets(kind); if (!targets.length) { showErr("Choose the county first, so the app knows which county folder to use."); return true; }
   const name = nameOverride || fileName(kind); const done = [];
   for (const parts of targets) {
@@ -2470,7 +2476,8 @@ async function loadMaster(file, quiet) {
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
   let max = 0; const psm = {};
   for (const r of rows.slice(1)) { const id = Number(r[0]); if (Number.isFinite(id)) max = Math.max(max, id); if (r[5] && r[1]) psm[String(r[5]).trim()] = String(r[1]).trim(); }
-  S.masterMax = Math.max(max, FILING_FLOOR, +storeGet("mhw.lastFiling") || 0); S.psm = psm; S.masterSource = file.name; $("nameMaster").textContent = `${file.name} · ${rows.length - 1} rows`; $("dropMaster").classList.add("has");
+  // The master list decides the next number; a number used this session but not yet added to it still counts.
+  S.masterMax = Math.max(max, S.usedThisSession || 0); S.masterFromList = true; S.psm = psm; S.masterSource = file.name; $("nameMaster").textContent = `${file.name} · ${rows.length - 1} rows`; $("dropMaster").classList.add("has");
   if (!S.example && !S.nofFiled && (!v("filingNo") || srcOf("filingNo") === "master list")) setVal("filingNo", String(S.masterMax + 1), "master list");
   refresh(); if (!quiet) toast(`Next filing number: ${S.masterMax + 1}`);
 }
@@ -2521,12 +2528,13 @@ async function init() {
   $("psm").addEventListener("change", () => { const n = S.psm[v("psm")]; if (n && !v("surveyor")) setVal("surveyor", n, "master list"); refresh(); });
   $("firm").addEventListener("change", () => { const f = S.data.firms.find(f => firmLabel(f) === $("firm").value); if (f) { applyFirm(f, "firm on file"); refresh(); } });
   $("btnNew").addEventListener("click", resetAll);
-  $("btnClear").addEventListener("click", () => { resetAll(); showStep("s1"); });
+  $("btnClear").addEventListener("click", async () => { if (S.folder && canPickFolder()) await masterFromFolder(true); resetAll(); showStep("s1"); });
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-go]"); if (b) showStep(b.dataset.go); });
   $("btnFill").addEventListener("click", async (e) => {
     const { mail, approval, survey } = S.files; const btn = e.currentTarget;
     if (!mail && !approval && !survey) { toast("Add the request email, the survey or the procedural approval first."); return; }
     btn.disabled = true; $("fillInfo").textContent = "Reading the files…";
+    if (S.folder && canPickFolder()) await masterFromFolder(true);
     try {
       const keepNo = S.nofFiled ? v("filingNo") : ""; resetAll(); if (keepNo) { setVal("filingNo", keepNo, "master list"); S.nofFiled = true; }
       if (mail) await onEmail(mail.bytes, mail.name);
@@ -2539,7 +2547,7 @@ async function init() {
   });
   $("ckAll").addEventListener("click", () => { CHECKS.forEach(c => S.check[c.id] = true); renderChecks(); refresh(); });
   $("ckNone").addEventListener("click", () => { CHECKS.forEach(c => S.check[c.id] = null); S.auto = {}; renderChecks(); refresh(); });
-  $("btnFolder").addEventListener("click", () => pickFolder()); $("saveBarBtn").addEventListener("click", () => pickFolder()); loadFolder();
+  $("btnFolder").addEventListener("click", () => pickFolder()); $("saveBarBtn").addEventListener("click", () => (S.folder && !S.folderOk) ? masterFromFolder(true) : pickFolder()); loadFolder();
   $("btnMaster").addEventListener("click", async (e) => { const b = e.currentTarget; b.disabled = true; try { await addToMaster(false); } catch (err) { console.error(err); showErr(`Couldn't update the master list: ${err.message}`); } finally { b.disabled = !accepted(); } });
   $("blockSize").addEventListener("input", () => setBlockScale(+$("blockSize").value / 100));
   setBlockScale(parseFloat(storeGet("mhw.blockScale")) || 1);
