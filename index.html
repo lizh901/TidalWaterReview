@@ -1462,13 +1462,15 @@ async function readSurvey(bytes) {
   let best = null;
   for (const [s, set] of strings) { const t = s.toUpperCase(); if (jobRe.test(t) && !/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(t) && !/^\d+-\d+$/.test(t) && !/^\d+\/\d+(-\d+)?$/.test(t) && set.size === doc.numPages) { if (!best || s.length > best.length) best = s; } }
   if (best) out.jobNo = best;
+  m = U.match(/\b(?:JOB|FILE)\s*(?:NO\.?|NUMBER|NUM\.?|#)\s*[:#]?\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/);
+  if (m) out.jobNo = m[1].replace(/[\/-]+$/, "");
   return out;
 }
 function titleCase(s) { return s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()); }
 
 /* ---------- applying what was read ---------- */
 async function applyApproval(a) {
-  if (a.business) { const jm = a.business.match(/\s*Job\s*(?:No\.?|#)\s*([\w\/-]+)\s*$/i); if (jm) { a.jobNo = jm[1]; a.business = a.business.slice(0, jm.index).trim(); } }
+  if (a.business) { const jm = a.business.match(/\s*(?:Job|File)\s*(?:No\.?|#)\s*([\w\/-]+)\s*$/i); if (jm) { a.jobNo = jm[1]; a.business = a.business.slice(0, jm.index).trim(); } }
   S.approvalRead = a;
   if (a.jobNo) setVal("jobNo", a.jobNo, "approval");
   if (a.county) { const c = S.data.counties.find(c => c.toLowerCase() === a.county.toLowerCase().replace(/\s*county$/, "")); if (c) setVal("county", c, "approval"); }
@@ -1623,10 +1625,19 @@ function strMatch(a, b) {
   return n(a.section) === n(b.section) && n(a.township) === n(b.township) && n(a.range) === n(b.range) && (!n(a.township) || (a.twpDir || "") === (b.twpDir || "")) && (!n(a.range) || (a.rngDir || "") === (b.rngDir || ""));
 }
 function enteredStr() { return { section: v("section"), township: v("township"), twpDir: v("twpDir"), range: v("range"), rngDir: v("rngDir") }; }
+// Puts the BLM section, township and range into the form. Without force, only blank boxes
+// (or ones an earlier BLM lookup filled) change, so values read from the survey or typed in stay.
+function fillStr(x, force) {
+  if (!x || !(x.section || x.township || x.range)) return;
+  const mine = (id) => force || !v(id) || srcOf(id) === "BLM";
+  if (mine("section")) setVal("section", x.section || "N/A", "BLM");
+  if (mine("township")) { setVal("township", x.township || "N/A", "BLM"); $("twpDir").value = x.twpDir || ""; }
+  if (mine("range")) { setVal("range", x.range || "N/A", "BLM"); $("rngDir").value = x.rngDir || ""; }
+}
 function renderLookup() {
   const box = $("lookup"); if (!box) return; const L2 = S.live;
   if (!L2.point) { box.innerHTML = `<span class="small muted" style="grid-column:1/-1">Click the project point to check the quad, waterbody and section.</span>`; return; }
-  const row = (label, map, entered, ok, useId) => `<span class="h">${label}</span><span>${escapeHtml(map)}</span><span class="muted">You entered: ${escapeHtml(entered || "nothing")}</span><span>${ok === null ? "" : ok ? '<span class="ok">✓ Matches</span>' : `<span class="no">✗ Differs</span> ${useId ? `<button class="small" type="button" data-use="${useId}">Use map</button>` : ""}`}</span>`;
+  const row = (label, map, entered, ok, useId) => `<span class="h">${label}</span><span>${escapeHtml(map)}</span><span class="muted">You entered: ${escapeHtml(entered || "nothing")}</span><span>${ok === null ? "" : ok ? '<span class="ok">✓ Matches</span>' : `<span class="no">✗ Differs</span> ${useId ? `<button class="small" type="button" data-use="${useId}">${useId === "str" ? "Use BLM" : "Use map"}</button>` : ""}`}</span>`;
   let h = "";
   if (L2.loading) h += `<span class="small muted" style="grid-column:1/-1">Checking USGS and BLM records at ${L2.point[0].toFixed(6)}, ${L2.point[1].toFixed(6)}…</span>`;
   if (L2.quad !== undefined) h += row("Quad (USGS)", L2.quad || "Not found", v("quad"), L2.quad ? L2.quad.toLowerCase() === v("quad").toLowerCase() : null, L2.quad ? "quad" : "");
@@ -1639,7 +1650,7 @@ function renderLookup() {
   box.querySelectorAll("[data-use]").forEach(b => b.addEventListener("click", () => {
     if (b.dataset.use === "quad") setVal("quad", L2.quad, "USGS map");
     if (b.dataset.use === "water") setVal("waterbody", L2.waters[0], "USGS map");
-    if (b.dataset.use === "str") { const x = L2.str; setVal("section", x.section || "N/A", "PLSS map"); setVal("township", x.township || "N/A", "PLSS map"); setVal("range", x.range || "N/A", "PLSS map"); $("twpDir").value = x.twpDir || ""; $("rngDir").value = x.rngDir || ""; }
+    if (b.dataset.use === "str") fillStr(L2.str, true);
     refresh(); renderLookup();
   }));
 }
@@ -1649,8 +1660,8 @@ async function runLookups(lat, lon) {
   if (!S.live.point || S.live.point[0] !== lat || S.live.point[1] !== lon) return;
   S.live.loading = false;
   if (q.status === "fulfilled") S.live.quad = parseQuad(q.value); else S.live.errors.push(`Quad lookup failed (${q.reason.message}).`);
-  if (p.status === "fulfilled") S.live.str = parsePlss(p.value); else S.live.errors.push(`Section lookup failed (${p.reason.message}).`);
-  if (w.status === "fulfilled") S.live.waters = parseWaters(w.value); else S.live.errors.push(`Waterbody lookup failed (${w.reason.message}).`);
+  if (p.status === "fulfilled") { S.live.str = parsePlss(p.value); fillStr(S.live.str, false); } else S.live.errors.push(`Section lookup failed (${p.reason.message}).`);
+  if (w.status === "fulfilled") { S.live.waters = parseWaters(w.value); if (S.live.waters.length && (!v("waterbody") || srcOf("waterbody") === "USGS map")) setVal("waterbody", S.live.waters[0], "USGS map"); } else S.live.errors.push(`Waterbody lookup failed (${w.reason.message}).`);
   renderLookup(); refresh();
 }
 function fmtLon(x) { const a = Math.abs(x).toFixed(6); const [d, f] = a.split("."); return d.padStart(3, "0") + "." + f; }
