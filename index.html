@@ -844,6 +844,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
   </header>
 
   <div class="savebar off" id="saveBar"><span class="dot"></span><p id="saveBarText">Checking where files will save…</p><button class="small primary" type="button" id="saveBarBtn" hidden>Choose the MHW Section folder</button></div>
+  <dialog class="help" id="printNext">
+    <h3>Print the survey with the disclaimer?</h3>
+    <p style="margin:0 0 12px">The support documents went to the printer window. Next is the survey with the disclaimer. Pick the large-format printer if the survey is bigger than letter size.</p>
+    <div class="row"><button class="primary" type="button" id="printNextGo">Print the survey</button><button type="button" id="printNextSkip">Not now</button></div>
+  </dialog>
   <dialog class="help" id="folderHelp">
     <h3>Where is your MHW Section folder?</h3>
     <p style="margin:0">The app needs this once so every Save goes straight into the right folders. A Windows folder window opens next.</p>
@@ -2348,12 +2353,33 @@ async function addToMaster(quiet) {
   S.masterAdded = mhw(); noteUsed(v("filingNo")); refresh();
   toast(`Added ${mhw()} as row ${r.row} of ${best.n}`); S.masterMsg = `Added ${mhw()} as row ${r.row} of ${root.name}\\${best.n}. Open the workbook in Excel to see it.`; refresh(); return true;
 }
+// Opens the browser's print window for a PDF (Edge and Chrome print PDFs from a hidden frame).
+function printPdf(bytes) {
+  return new Promise((resolve) => {
+    const old = document.getElementById("printFrame"); if (old) { URL.revokeObjectURL(old.src); old.remove(); }
+    const f = document.createElement("iframe"); f.id = "printFrame";
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0";
+    f.src = URL.createObjectURL(bytes instanceof Blob ? bytes : new Blob([bytes], { type: "application/pdf" }));
+    f.onload = () => setTimeout(() => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { window.open(f.src, "_blank"); } resolve(); }, 600);
+    document.body.appendChild(f);
+  });
+}
+// After the support documents are saved: print them, then offer the survey with the disclaimer.
+async function printFinal(pkg) {
+  await printPdf(pkg);
+  const d = $("printNext"); if (d.open) return;
+  const go = $("printNextGo"), skip = $("printNextSkip");
+  const close = () => { d.close(); go.onclick = skip.onclick = null; };
+  go.onclick = async () => { close(); try { await printPdf(await buildReviewedSurvey()); } catch (e) { console.error(e); showErr(e.message || String(e)); } };
+  skip.onclick = close; d.showModal();
+}
 async function save(kind, btn) {
   $("outErr").hidden = true; btn.disabled = true; const label = btn.textContent; btn.textContent = "Building…";
   try {
     // Ask for the folder first, straight from the click, before the slow PDF build.
     if (canPickFolder() && !S.folder && !S.folderDeclined) await pickFolder();
     const bytes = await BUILDERS[kind](); await saveOut(kind, bytes); savedNote(btn, S.lastSaved);
+    if (kind === "package") await printFinal(bytes);
   } catch (e) { console.error(e); showErr(e.message || String(e)); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
