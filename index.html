@@ -1693,6 +1693,7 @@ function renderChecks() {
 /* ---------- map and live location lookups ---------- */
 const SVC = {
   plss: "https://gis.blm.gov/arcgis/rest/services/Cadastral/BLM_Natl_PLSS_CadNSDI/MapServer",
+  labins: "https://maps.freac.fsu.edu/arcgis/rest/services/LABINS/LABINS_Data_ccr_relate/MapServer",
   trs: "https://services1.arcgis.com/O1JpcwDW8sjYuddV/ArcGIS/rest/services/TRS_LABINS/FeatureServer/0",
   quad: "https://carto.nationalmap.gov/arcgis/rest/services/map_indices/MapServer",
   nhd: "https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer",
@@ -1715,13 +1716,21 @@ function identify(url, lat, lon, tolPx) {
     mapExtent: `${lon - d},${lat - d},${lon + d},${lat + d}`, imageDisplay: "800,800,96", returnGeometry: "false" });
 }
 // Florida's LABINS township/range/section layer, hosted on ArcGIS Online (fast, answers reliably).
-async function labinsStr(lat, lon) {
-  const d = await jsonp(SVC.trs + "/query", { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "sec,twn,rng,tdir,rdir", returnGeometry: "false" }, 15000);
-  const a = d.features && d.features[0] && d.features[0].attributes; if (!a || !a.twn) throw new Error("no section here");
-  return { section: a.sec ? String(a.sec) : "", township: String(Math.abs(a.twn)), twpDir: String(a.tdir || (a.twn < 0 ? "S" : "N")).charAt(0).toUpperCase(), range: String(Math.abs(a.rng)), rngDir: String(a.rdir || "E").charAt(0).toUpperCase(), from: "LABINS" };
+// LABINS statewide sections (the layer labins.org uses); the ArcGIS Online copy only covers part of the state.
+async function labinsStr(lat, lon, url) {
+  const d = await jsonp(url + "/query", { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "*", returnGeometry: "false" }, 15000);
+  const a = d.features && d.features[0] && d.features[0].attributes; if (!a) throw new Error("no section here");
+  const g = (...k) => { for (const n of k) for (const f in a) if (f.toLowerCase() === n && a[f] != null && String(a[f]).trim() !== "") return a[f]; return ""; };
+  const twn = g("twn", "twn_ch"), rng = g("rng", "rng_ch"), sec = g("sec", "sec_ch");
+  const tn = parseInt(String(twn).replace(/\D/g, ""), 10), rn = parseInt(String(rng).replace(/\D/g, ""), 10); if (!tn || !rn) throw new Error("no section here");
+  const td = String(g("tdir") || String(twn).replace(/[^NS]/gi, "") || "S").charAt(0).toUpperCase();
+  const rd = String(g("rdir") || String(rng).replace(/[^EW]/gi, "") || "E").charAt(0).toUpperCase();
+  const sn = parseInt(String(sec).replace(/\D/g, ""), 10);
+  return { section: sn ? String(sn) : "", township: String(tn), twpDir: td, range: String(rn), rngDir: rd, from: "LABINS" };
 }
 async function strAt(lat, lon) {
-  try { return await labinsStr(lat, lon); } catch (e) { /* fall back to BLM */ }
+  try { return await labinsStr(lat, lon, SVC.labins + "/10"); } catch (e) { /* try the ArcGIS Online copy */ }
+  try { return await labinsStr(lat, lon, SVC.trs); } catch (e) { /* fall back to BLM */ }
   return { ...parsePlss(await plssAt(lat, lon)), from: "BLM" };
 }
 async function plssAt(lat, lon) {
@@ -1818,8 +1827,7 @@ function initMap() {
   LF.tileLayer(SVC.tiles + "Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19 }).addTo(map);
   const overlays = {};
   if (LF.esri) {
-    overlays["Sections (LABINS)"] = LF.esri.featureLayer({ url: SVC.trs, minZoom: 12, fields: ["FID", "sec", "twn", "rng", "tdir", "rdir"], style: () => ({ color: "#FFD400", weight: 2, fill: false }) })
-      .bindTooltip((l) => { const a = l.feature.properties; return `Section ${a.sec}, T${Math.abs(a.twn)}${a.tdir || ""} R${Math.abs(a.rng)}${a.rdir || ""}`; }, { sticky: true }).addTo(map);
+    overlays["Sections (LABINS)"] = LF.esri.dynamicMapLayer({ url: SVC.labins, layers: [9, 10], opacity: 0.9, useCors: false }).addTo(map);
     overlays["Sections (BLM PLSS)"] = LF.esri.dynamicMapLayer({ url: SVC.plss, opacity: 0.85, useCors: false });
     overlays["USGS quad grid"] = LF.esri.dynamicMapLayer({ url: SVC.quad, opacity: 0.85, useCors: false });
     overlays["Water features (NHD)"] = LF.esri.dynamicMapLayer({ url: SVC.nhd, opacity: 0.6, useCors: false });
