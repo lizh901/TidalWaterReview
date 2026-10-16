@@ -852,9 +852,16 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
 
   <div class="busy" id="busy" role="status" aria-live="polite" hidden><div id="busyTxt">Reading the survey…</div><div class="busybar"><span id="busyBar"></span></div></div>
   <div class="savebar off" id="saveBar"><span class="dot"></span><p id="saveBarText">Checking where files will save…</p><button class="small primary" type="button" id="saveBarBtn" hidden>Choose the MHW Section folder</button></div>
+  <dialog class="help" id="printFirst">
+    <h3>Print the support documents?</h3>
+    <p style="margin:0 0 8px">The website can't set the printer for you, so pick these in the print window:</p>
+    <ul style="margin:0 0 12px;padding-left:20px"><li>Open <strong>More settings</strong></li><li>Paper size: <strong>Letter</strong> (Chrome may still be on 11 x 17 from the last survey)</li><li>Scale: <strong>Fit to printable area</strong></li><li><strong>Untick "Print on both sides"</strong></li></ul>
+    <div class="row"><button class="primary" type="button" id="printFirstGo">Print the support documents</button><button type="button" id="printFirstSkip">Not now</button></div>
+  </dialog>
   <dialog class="help" id="printNext">
     <h3>Print the survey with the disclaimer?</h3>
-    <p style="margin:0 0 12px">The support documents went to the printer window. Next is the survey with the disclaimer. In the print window, open <strong>More settings</strong> and set Paper size to <strong>11 x 17 (Tabloid)</strong> and Scale to <strong>Fit to page</strong>.</p>
+    <p style="margin:0 0 8px">Next is the survey with the disclaimer. In the print window, open <strong>More settings</strong> and pick:</p>
+    <ul style="margin:0 0 12px;padding-left:20px"><li>Paper size: <strong>11 x 17 (Tabloid)</strong></li><li>Scale: <strong>Fit to printable area</strong></li><li><strong>Untick "Print on both sides"</strong></li></ul>
     <div class="row"><button class="primary" type="button" id="printNextGo">Print the survey</button><button type="button" id="printNextSkip">Not now</button></div>
   </dialog>
   <dialog class="help" id="folderHelp">
@@ -2497,8 +2504,10 @@ function printPdf(bytes) {
   });
 }
 // After the support documents are saved: print them, then offer the survey with the disclaimer.
+const askPrint = (id) => new Promise((resolve) => { const d = $(id), go = $(id + "Go"), skip = $(id + "Skip"); if (d.open) return resolve(false);
+  const close = (v) => { d.close(); go.onclick = skip.onclick = null; resolve(v); }; go.onclick = () => close(true); skip.onclick = () => close(false); d.showModal(); });
 async function printFinal(pkg) {
-  await printPdf(pkg);
+  if (await askPrint("printFirst")) await printPdf(pkg);
   const d = $("printNext"); if (d.open) return;
   const go = $("printNextGo"), skip = $("printNextSkip");
   const close = () => { d.close(); go.onclick = skip.onclick = null; };
