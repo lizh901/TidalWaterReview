@@ -1451,7 +1451,7 @@ async function readSurvey(bytes) {
     for (const b of bits) { if (b.length < 40) { const set = strings.get(b) || new Set(); set.add(p); strings.set(b, set); } }
     all += "\n" + bits.join("\n");
   }
-  out0.noText = all.replace(/\s+/g, "").length < 150;
+  out0.noText = all.replace(/\s+/g, "").length < 60;
   const U = all.toUpperCase().replace(/%%D/g, "°").replace(/\s+/g, " "); const out = { pages, doc, text: U, signed: !!out0.signed, noText: out0.noText };
   let m = U.match(/SECTION:?\s*([A-Z0-9 .'-]+?)\s*[-–,]\s*TOWNSHIP:?\s*(\d+|N\/A)\s*(SOUTH|NORTH|S|N)?\s*[-–,]?\s*RANGE:?\s*(\d+|N\/A)\s*(EAST|WEST|E|W)?\b/);
   if (!m) m = U.match(/SEC(?:TION|\.)?\s*(\d+)\s*,?\s*T(?:OWNSHIP|WP\.?)?\s*(\d+)\s*(S|N|SOUTH|NORTH)\s*,?\s*R(?:ANGE|GE\.?|NG\.?)?\s*(\d+)\s*(E|W|EAST|WEST)\b/);
@@ -1523,7 +1523,7 @@ function applySurvey(r) {
   found.push(`${r.pages.length} sheet${r.pages.length > 1 ? "s" : ""}, ${r.pages.map(p => `${(Math.min(p.w, p.h) / 72).toFixed(0)}" x ${(Math.max(p.w, p.h) / 72).toFixed(0)}"`).join(", ")}`);
   if (r.mhwElev) found.push(`MHW elevation ${r.mhwElev} ft NAVD88 on the survey` + (S.approvalRead?.mhwElev ? `, ${S.approvalRead.mhwElev} ft on the approval` : ""));
   if (r.located) found.push(r.dateFrom ? `Survey date ${mdyyyy(r.located)} (from the ${r.dateFrom}; check it)` : `MHW located ${mdyyyy(r.located)}`);
-  if (r.noText) found.push("This survey PDF has almost no readable text (it was likely scanned or plotted as drawing lines), so the job number, date and section can't be read from it. They'll come from the map, the approval and the email where possible; type anything still blank.");
+  if (r.noText) found.push("This survey PDF has almost no readable text (it was likely scanned or plotted as drawing lines), so most details can't be read from it. They'll come from the map, the approval and the email where possible; type anything still blank.");
   if (!r.jobNo && !v("jobNo")) found.push("No job number found in the survey text. Type it from the title block.");
   if (r.str && S.approvalRead && (S.approvalRead.sec || S.approvalRead.twp)) found.push(`Approval lists Sec ${S.approvalRead.sec || "-"}, Twp ${S.approvalRead.twp || "-"}, Rge ${S.approvalRead.rge || "-"}`);
   S.surveyFound = found; renderFound(); applyLive(); applyAuto(); renderChecks();
