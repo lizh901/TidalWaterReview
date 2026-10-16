@@ -1463,7 +1463,10 @@ async function waitLookups() { const t = Date.now(); await new Promise(r => setT
 function busyDone() { const b = $("busy"); if (b) b.hidden = true; const c = $("checksBusy"); if (c) c.hidden = true; }
 async function ocrSurvey(doc, say) {
   const T = await loadOcr(); const base = new URL("ocr/", location.href).href;
-  const worker = await T.createWorker("eng", 1, { workerPath: base + "worker.min.js", corePath: base, langPath: base, gzip: true });
+  // Several readers work on different parts of the sheet at once; one more reads the large spaced-out labels.
+  const nw = Math.max(1, Math.min(3, (navigator.hardwareConcurrency || 2) - 1));
+  const mk = () => T.createWorker("eng", 1, { workerPath: base + "worker.min.js", corePath: base, langPath: base, gzip: true });
+  const workers = await Promise.all(Array.from({ length: nw }, mk)); const sparse = await mk(); await sparse.setParameters({ tessedit_pageseg_mode: "11" });
   let text = ""; let corner = null;
   try {
     const n = Math.min(doc.numPages, 4);
@@ -1475,26 +1478,30 @@ async function ocrSurvey(doc, say) {
       const cols = c.width > c.height ? 3 : 2, rows = c.width > c.height ? 2 : 3, ov = 0.08; const jobs = [];
       for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) jobs.push([k, r]);
       jobs.push("turn");
-      for (let i = 0; i < jobs.length; i++) {
-        say(`Reading the lettering on the survey (sheet ${p} of ${n}, part ${i + 1} of ${jobs.length})…`);
-        busy(`Reading the survey, please wait… (sheet ${p} of ${n}, part ${i + 1} of ${jobs.length})`, ((p - 1) * jobs.length + i) / (n * jobs.length));
+      const total = jobs.length + 1; let done = 0;
+      const tick = () => { done++; say(`Reading the lettering on the survey (sheet ${p} of ${n}, ${done} of ${total} parts done)…`); busy(`Reading the survey, please wait… (sheet ${p} of ${n}, ${done} of ${total} parts done)`, ((p - 1) * total + done) / (n * total)); };
+      say(`Reading the lettering on the survey (sheet ${p} of ${n})…`); busy(`Reading the survey, please wait… (sheet ${p} of ${n})`, ((p - 1) * total + 0.3) / (n * total));
+      const cut = (job) => {
         let src = document.createElement("canvas"), ox = 0, oy = 0;
-        if (jobs[i] === "turn") { src.width = c.height; src.height = c.width; const h = src.getContext("2d"); h.translate(src.width / 2, src.height / 2); h.rotate(Math.PI / 2); h.drawImage(c, -c.width / 2, -c.height / 2); }
-        else { const [k, r] = jobs[i]; const tw = c.width / cols, th = c.height / rows; ox = Math.max(0, Math.round(k * tw - tw * ov)); oy = Math.max(0, Math.round(r * th - th * ov));
+        if (job === "turn") { src.width = c.height; src.height = c.width; const h = src.getContext("2d"); h.translate(src.width / 2, src.height / 2); h.rotate(Math.PI / 2); h.drawImage(c, -c.width / 2, -c.height / 2); }
+        else { const [k, r] = job; const tw = c.width / cols, th = c.height / rows; ox = Math.max(0, Math.round(k * tw - tw * ov)); oy = Math.max(0, Math.round(r * th - th * ov));
           src.width = Math.min(c.width - ox, Math.round(tw * (1 + 2 * ov))); src.height = Math.min(c.height - oy, Math.round(th * (1 + 2 * ov))); src.getContext("2d").drawImage(c, -ox, -oy); }
-        const { data } = await worker.recognize(src);
-        text += "\n" + data.text;
-        if (p === 1 && jobs[i] !== "turn") for (const w of data.lines || []) { const dm = w.text.match(DATE_RE); const dw = dm && (w.words || []).find(x => /\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2}|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i.test(x.text)) || w; const fx = (dw.bbox.x0 + ox) / c.width, fy = (w.bbox.y1 + oy) / c.height; if (dm && recentDate(dm[1]) && fx >= 0.75 && fy >= 0.6) { const score = fx + fy; if (!corner || score > corner.score) corner = { score, date: dm[1] }; } }
-      }
+        return { src, ox, oy };
+      };
+      const results = new Array(jobs.length); let next = 0;
+      const run = async (w) => { while (next < jobs.length) { const i = next++; const { src, ox, oy } = cut(jobs[i]); const { data } = await w.recognize(src); results[i] = { data, ox, oy, turn: jobs[i] === "turn" }; tick(); } };
       // Big spaced-out labels (waterbody names like "J U P I T E R  S O U N D") are only seen by the sparse-text mode, on a smaller copy of the sheet.
-      say(`Reading the large labels on the survey (sheet ${p} of ${n})…`); busy(`Reading the survey, please wait… (large labels, sheet ${p} of ${n})`, (p * jobs.length - 0.5) / (n * jobs.length));
       const k = 1600 / Math.max(c.width, c.height), sm = document.createElement("canvas"); sm.width = Math.round(c.width * k); sm.height = Math.round(c.height * k); sm.getContext("2d").drawImage(c, 0, 0, sm.width, sm.height);
       const st = document.createElement("canvas"); st.width = sm.height; st.height = sm.width; const sg = st.getContext("2d"); sg.translate(st.width / 2, st.height / 2); sg.rotate(Math.PI / 2); sg.drawImage(sm, -sm.width / 2, -sm.height / 2);
-      await worker.setParameters({ tessedit_pageseg_mode: "11" });
-      for (const img of [sm, st]) text += "\n" + (await worker.recognize(img)).data.text;
-      await worker.setParameters({ tessedit_pageseg_mode: "3" });
+      const sparseRun = (async () => { let t = ""; for (const img of [sm, st]) t += "\n" + (await sparse.recognize(img)).data.text; tick(); return t; })();
+      const [, sparseText] = await Promise.all([Promise.all(workers.map(run)), sparseRun]);
+      for (const { data, ox, oy, turn } of results) {
+        text += "\n" + data.text;
+        if (p === 1 && !turn) for (const w of data.lines || []) { const dm = w.text.match(DATE_RE); const dw = dm && (w.words || []).find(x => /\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2}|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i.test(x.text)) || w; const fx = (dw.bbox.x0 + ox) / c.width, fy = (w.bbox.y1 + oy) / c.height; if (dm && recentDate(dm[1]) && fx >= 0.75 && fy >= 0.6) { const score = fx + fy; if (!corner || score > corner.score) corner = { score, date: dm[1] }; } }
+      }
+      text += sparseText;
     }
-  } finally { await worker.terminate(); }
+  } finally { await Promise.all([...workers, sparse].map(w => w.terminate())); }
   return { text, corner };
 }
 async function readSurvey(bytes) {
