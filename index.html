@@ -1244,6 +1244,8 @@ async function fetchBytes(url) { if (window.MHW_EMBED && window.MHW_EMBED[url]) 
 function pdfjsDoc(bytes) { return pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise; }
 const MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
 const DATE_RE = /\b((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Za-z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2}))\b/i;
+// A survey date is recent; older dates on a sheet are plat, FEMA map or record dates.
+function recentDate(str) { const d = parseISO(toISO(String(str).toUpperCase())); return !!d && d <= new Date(Date.now() + 864e5) && Date.now() - d < 400 * 864e5; }
 function toISO(str) {
   if (!str) return "";
   let m = str.match(/^([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})$/);
@@ -1439,6 +1441,41 @@ async function readApproval(bytes) {
 }
 
 /* ---------- reading the survey ---------- */
+// Surveys plotted from CAD often draw their lettering as lines, so there is no text to read. Then read the page images instead (OCR).
+// The OCR files are served from /ocr/ on the website; the downloaded copy can't use them.
+function loadOcr() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (!/^https?:$/.test(location.protocol)) return Promise.reject(new Error("text recognition needs the website"));
+  return new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = new URL("ocr/tesseract.min.js", location.href).href; sc.onload = () => res(window.Tesseract); sc.onerror = () => rej(new Error("couldn't load text recognition")); document.head.appendChild(sc); });
+}
+async function ocrSurvey(doc, say) {
+  const T = await loadOcr(); const base = new URL("ocr/", location.href).href;
+  const worker = await T.createWorker("eng", 1, { workerPath: base + "worker.min.js", corePath: base, langPath: base, gzip: true });
+  let text = ""; let corner = null;
+  try {
+    const n = Math.min(doc.numPages, 4);
+    for (let p = 1; p <= n; p++) {
+      const page = await doc.getPage(p); const vp0 = page.getViewport({ scale: 1 }); const scale = Math.min(6400 / Math.max(vp0.width, vp0.height), 4);
+      const vp = page.getViewport({ scale }); const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); await page.render({ canvasContext: g, viewport: vp }).promise;
+      // Read it upright in overlapping tiles (so notes in different corners don't run together), then the whole sheet turned a quarter for sideways title blocks.
+      const cols = c.width > c.height ? 3 : 2, rows = c.width > c.height ? 2 : 3, ov = 0.08; const jobs = [];
+      for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) jobs.push([k, r]);
+      jobs.push("turn");
+      for (let i = 0; i < jobs.length; i++) {
+        say(`Reading the lettering on the survey (sheet ${p} of ${n}, part ${i + 1} of ${jobs.length})…`);
+        let src = document.createElement("canvas"), ox = 0, oy = 0;
+        if (jobs[i] === "turn") { src.width = c.height; src.height = c.width; const h = src.getContext("2d"); h.translate(src.width / 2, src.height / 2); h.rotate(Math.PI / 2); h.drawImage(c, -c.width / 2, -c.height / 2); }
+        else { const [k, r] = jobs[i]; const tw = c.width / cols, th = c.height / rows; ox = Math.max(0, Math.round(k * tw - tw * ov)); oy = Math.max(0, Math.round(r * th - th * ov));
+          src.width = Math.min(c.width - ox, Math.round(tw * (1 + 2 * ov))); src.height = Math.min(c.height - oy, Math.round(th * (1 + 2 * ov))); src.getContext("2d").drawImage(c, -ox, -oy); }
+        const { data } = await worker.recognize(src);
+        text += "\n" + data.text;
+        if (p === 1 && jobs[i] !== "turn") for (const w of data.lines || []) { const dm = w.text.match(DATE_RE); const dw = dm && (w.words || []).find(x => /\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2}|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i.test(x.text)) || w; const fx = (dw.bbox.x0 + ox) / c.width, fy = (w.bbox.y1 + oy) / c.height; if (dm && recentDate(dm[1]) && fx >= 0.75 && fy >= 0.6) { const score = fx + fy; if (!corner || score > corner.score) corner = { score, date: dm[1] }; } }
+      }
+    }
+  } finally { await worker.terminate(); }
+  return { text, corner };
+}
 async function readSurvey(bytes) {
   const doc = await pdfjsDoc(bytes); const pages = []; const strings = new Map(); let all = ""; const out0 = {};
   for (let p = 1; p <= doc.numPages; p++) {
@@ -1447,22 +1484,34 @@ async function readSurvey(bytes) {
     const bits = [];
     for (const a of await page.getAnnotations()) { if (a.fieldType === "Sig") out0.signed = true; const s = (a.contentsObj && a.contentsObj.str) || a.contents; if (s) bits.push(s.trim()); }
     const tc = await page.getTextContent(); bits.push(tc.items.map(i => i.str).join(" "));
-    if (p === 1) for (const it of tc.items) { const dm = it.str.match(DATE_RE); if (dm && it.transform) { const [vx, vy] = vp.convertToViewportPoint(it.transform[4], it.transform[5]); const score = vx / vp.width + vy / vp.height; if (!out0.corner || score > out0.corner.score) out0.corner = { score, date: dm[1] }; } }
+    if (p === 1) for (const it of tc.items) { const dm = it.str.match(DATE_RE); if (dm && it.transform && recentDate(dm[1])) { const [vx, vy] = vp.convertToViewportPoint(it.transform[4], it.transform[5]); if (vx / vp.width < 0.75 || vy / vp.height < 0.6) continue; const score = vx / vp.width + vy / vp.height; if (!out0.corner || score > out0.corner.score) out0.corner = { score, date: dm[1] }; } }
     for (const b of bits) { if (b.length < 40) { const set = strings.get(b) || new Set(); set.add(p); strings.set(b, set); } }
     all += "\n" + bits.join("\n");
   }
   out0.noText = all.replace(/\s+/g, "").length < 60;
-  const U = all.toUpperCase().replace(/%%D/g, "°").replace(/\s+/g, " "); const out = { pages, doc, text: U, signed: !!out0.signed, noText: out0.noText };
-  let m = U.match(/SECTION:?\s*([A-Z0-9 .'-]+?)\s*[-–,]\s*TOWNSHIP:?\s*(\d+|N\/A)\s*(SOUTH|NORTH|S|N)?\s*[-–,]?\s*RANGE:?\s*(\d+|N\/A)\s*(EAST|WEST|E|W)?\b/);
+  if (all.replace(/\s+/g, "").length < 400) {
+    const key = bytes.length + ":" + bytes[bytes.length >> 1] + ":" + bytes[bytes.length >> 2];
+    try {
+      const o = (S.ocrCache && S.ocrCache.key === key) ? S.ocrCache.o : await ocrSurvey(doc, (msg) => { const el = $("found"); if (el) { el.hidden = false; el.innerHTML = `<strong>${escapeHtml(msg)}</strong><div class="small muted">This survey's lettering is drawn as lines, so it's being read from the picture. It can take a minute.</div>`; } });
+      S.ocrCache = { key, o };
+      all += "\n" + o.text; out0.ocr = true; out0.noText = false; if (o.corner) out0.corner = o.corner;
+    } catch (e) { out0.ocrError = e.message; }
+  }
+  const U = all.toUpperCase().replace(/[—–]/g, "-").replace(/\bM[O0]Y(?=\s+\d{1,2},?\s+\d{4})/g, "MAY").replace(/%%D/g, "°").replace(/\s+/g, " "); const out = { pages, doc, text: U, signed: !!out0.signed, noText: out0.noText, ocr: !!out0.ocr };
+  let m = U.match(/SECTION:?\s*([A-Z0-9 .'-]+?)\s*[-–—,;|]\s*TOWNSHIP:?\s*(\d+|N\/A)\s*(SOUTH|NORTH|S|N)?\s*[-–—,;|]?\s*RANGE:?\s*(\d+|N\/A)\s*(EAST|WEST|E|W)?\b/);
   if (!m) m = U.match(/SEC(?:TION|\.)?\s*(\d+)\s*,?\s*T(?:OWNSHIP|WP\.?)?\s*(\d+)\s*(S|N|SOUTH|NORTH)\s*,?\s*R(?:ANGE|GE\.?|NG\.?)?\s*(\d+)\s*(E|W|EAST|WEST)\b/);
-  if (!m) m = U.match(/\bS(?:EC(?:TION|T)?)?\.?\s*:?\s*(\d{1,2})\s*[,;\-–]?\s*(?:OF\s+)?T(?:OWNSHIP|WP|WN)?\.?\s*:?\s*-?\s*(\d{1,2})\s*-?\s*(SOUTH|NORTH|S|N)\.?\s*[,;\-–]?\s*R(?:ANGE|GE|NG)?\.?\s*:?\s*-?\s*(\d{1,2})\s*-?\s*(EAST|WEST|E|W)\b/);
-  if (!m) { const r = U.match(/\bT(?:OWNSHIP|WP|WN)?\.?\s*-?\s*(\d{1,2})\s*-?\s*(SOUTH|NORTH|S|N)\.?\s*[,;\-–]?\s*R(?:ANGE|GE|NG)?\.?\s*-?\s*(\d{1,2})\s*-?\s*(EAST|WEST|E|W)\.?\s*[,;\-–]?\s*(?:IN\s+)?SEC(?:TION|T)?\.?\s*:?\s*(\d{1,2})\b/); if (r) m = [r[0], r[5], r[1], r[2], r[3], r[4]]; }
+  if (!m) m = U.match(/\bS(?:EC(?:TION|T)?)?\.?\s*:?\s*(\d{1,2})\s*[,;\-–—|]?\s*(?:OF\s+)?T(?:OWNSHIP|WP|WN)?\.?\s*:?\s*-?\s*(\d{1,2})\s*-?\s*(SOUTH|NORTH|S|N)\.?\s*[,;\-–—|]?\s*R(?:ANGE|GE|NG)?\.?\s*:?\s*-?\s*(\d{1,2})\s*-?\s*(EAST|WEST|E|W)\b/);
+  if (!m) { const r = U.match(/\bT(?:OWNSHIP|WP|WN)?\.?\s*-?\s*(\d{1,2})\s*-?\s*(SOUTH|NORTH|S|N)\.?\s*[,;\-–—|]?\s*R(?:ANGE|GE|NG)?\.?\s*-?\s*(\d{1,2})\s*-?\s*(EAST|WEST|E|W)\.?\s*[,;\-–—|]?\s*(?:IN\s+)?SEC(?:TION|T)?\.?\s*:?\s*(\d{1,2})\b/); if (r) m = [r[0], r[5], r[1], r[2], r[3], r[4]]; }
   if (!m) m = U.match(/(?:S-T-R|S\/T\/R|SEC(?:TION)?[\s\/-]*T(?:WP|OWNSHIP)[\s\/-]*R(?:GE|NG|ANGE))\s*:?\s*(\d{1,2})\s*[-\/]\s*(\d{1,2})\s*(S|N)?\s*[-\/]\s*(\d{1,2})\s*(E|W)?\b/);
   if (!m) m = U.match(/\b(\d{1,2})\s*-\s*(\d{1,2})\s*(S|N)\s*-\s*(\d{1,2})\s*(E|W)\b/);
   if (m) out.str = { section: titleCase(m[1].trim()), township: m[2], twpDir: (m[3] || "")[0] || "", range: m[4], rngDir: (m[5] || "")[0] || "" };
   m = U.match(/LOCATED\s+(?:BY\s+.{1,60}?\s+)?(?:ON\s+)?((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/);
   if (m) out.located = toISO(m[1]);
-  if (!out.located) { m = U.match(new RegExp("(?:DATE OF (?:LAST )?FIELD ?WORK|(?:LAST )?FIELD ?WORK (?:COMPLETED|DATE)|FIELD DATE)\\s*(?:COMPLETED)?\\s*[:=]?\\s*(?:ON\\s*)?" + DATE_RE.source.slice(2, -2))); if (m) { out.located = toISO(m[1]); out.dateFrom = "date of last field work"; } }
+  if (!out.located) {
+    let fw = U.match(new RegExp("DATE OF (?:LAST\\b[\\s\\S]{0,40}?)?FIELD\\s*WORK[\\s\\S]{0,160}?" + DATE_RE.source.slice(2, -2))); if (fw && !recentDate(fw[1])) fw = null;
+    if (!fw) fw = U.match(new RegExp("(?:DATE OF (?:LAST\\s*)?FIELD\\s*WORK|(?:LAST )?FIELD ?WORK (?:COMPLETED|DATE)|FIELD DATE)\\s*(?:COMPLETED)?\\s*[:=]?\\s*(?:ON\\s*)?" + DATE_RE.source.slice(2, -2)));
+    if (fw) { out.located = toISO(fw[1]); out.dateFrom = "date of last field work"; }
+  }
   if (!out.located && out0.corner) { out.located = toISO(out0.corner.date.toUpperCase()); out.dateFrom = "date in the title block corner"; }
   m = U.match(/MEAN HIGH WATER (?:LINE )?ELEVATION\s*(?:=|OF|IS)?\s*(-?\d+\.\d+)/); if (m) out.mhwElev = m[1];
   const dms = (lbl, hemi) => { const r = new RegExp(lbl + ":?\\s*(\\d{1,3})\\s*(?:%%D|°|DEG)?\\s*(\\d{1,2})['’]\\s*([\\d.]+)[\"”]?\\s*" + hemi); const q = U.match(r); return q ? (+q[1] + q[2] / 60 + q[3] / 3600) : null; };
@@ -1471,7 +1520,7 @@ async function readSurvey(bytes) {
   let best = null;
   for (const [s, set] of strings) { const t = s.toUpperCase(); if (jobRe.test(t) && !/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(t) && !/^\d+-\d+$/.test(t) && !/^\d+\/\d+(-\d+)?$/.test(t) && set.size === doc.numPages) { if (!best || s.length > best.length) best = s; } }
   if (best) out.jobNo = best;
-  m = U.match(/\b(?:JOB|FILE)\s*(?:NO\.?|NUMBER|NUM\.?|#)\s*[:#.]?\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/) || U.match(/\b(?:JOB|FILE)\s*:\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/);
+  m = U.match(/\b(?:JOB|FILE)\s*(?:NO\.?|NUMBER|NUM\.?|#)\s*[:#.]?\s*(?:[^\s\d]{1,3}\s+){0,3}((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]{2,})/) || U.match(/\b(?:JOB|FILE)\s*:\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/);
   if (m) out.jobNo = m[1].replace(/[\/-]+$/, "");
   return out;
 }
@@ -1523,6 +1572,7 @@ function applySurvey(r) {
   found.push(`${r.pages.length} sheet${r.pages.length > 1 ? "s" : ""}, ${r.pages.map(p => `${(Math.min(p.w, p.h) / 72).toFixed(0)}" x ${(Math.max(p.w, p.h) / 72).toFixed(0)}"`).join(", ")}`);
   if (r.mhwElev) found.push(`MHW elevation ${r.mhwElev} ft NAVD88 on the survey` + (S.approvalRead?.mhwElev ? `, ${S.approvalRead.mhwElev} ft on the approval` : ""));
   if (r.located) found.push(r.dateFrom ? `Survey date ${mdyyyy(r.located)} (from the ${r.dateFrom}; check it)` : `MHW located ${mdyyyy(r.located)}`);
+  if (r.ocr) found.push("The lettering on this survey is drawn as lines, so it was read from the picture. Double-check anything filled in from it.");
   if (r.noText) found.push("This survey PDF has almost no readable text (it was likely scanned or plotted as drawing lines), so most details can't be read from it. They'll come from the map, the approval and the email where possible; type anything still blank.");
   if (!r.jobNo && !v("jobNo")) found.push("No job number found in the survey text. Type it from the title block.");
   if (r.str && S.approvalRead && (S.approvalRead.sec || S.approvalRead.twp)) found.push(`Approval lists Sec ${S.approvalRead.sec || "-"}, Twp ${S.approvalRead.twp || "-"}, Rge ${S.approvalRead.rge || "-"}`);
@@ -1769,11 +1819,11 @@ function autoChecks() {
     if ((m = snip(/(SITE BENCH ?MARK|BENCH ?MARK SET|SET (A |AN )?[^.]{0,30}BENCH ?MARK|TBM SET)[^.]{0,60}/, T))) say("3a", true, `Found: ${m}`);
     if ((m = snip(/(BENCH ?MARK|\bTBM\b|\bB\.?M\.?\b)[^.]{0,80}/, T))) say("3b", true, `Found: ${m}`);
     // Prefer a benchmark elevation; a bare "ELEVATION ... NAVD" can be the MHW note instead.
-    if ((m = snip(/(BENCH ?MARK|\bTBM\b|\bB\.?M\.?\b)[^.]{0,80}?\d+\.\d+\s*'?\s*\(?\s*NAVD\s*\(?(19)?88\)?/, T) || snip(/(?<!WATER (LINE )?)(ELEVATION|\bEL)[^.]{0,60}?\d+\.\d+\s*'?\s*\(?\s*NAVD\s*\(?(19)?88\)?/, T))) say("3c", true, `Found: ${m}`);
+    if ((m = snip(/(BENCH ?MARK|\bTBM\b|\bB\.?M\.?\b)[\s\S]{0,80}?\d+\.\d+\s*['’]?\s*(?:FEET|FT\.?)?\s*\(?\s*NAV[DO0]\s*\(?(19)?88\)?/, T) || snip(/(?<!WATER (LINE )?)(ELEVATION|\bEL)[^.]{0,60}?\d+\.\d+\s*'?\s*\(?\s*NAVD\s*\(?(19)?88\)?/, T))) say("3c", true, `Found: ${m}`);
     if ((m = snip(/(NAVD\s*\(?(19)?88|NORTH AMERICAN VERTICAL DATUM)[^.]{0,80}/, T)) && /BENCH ?MARK|CONTROL|\bTBM\b/.test(T)) say("3d", true, `Found: ${m}`);
     if ((m = snip(/[NS]\s?\d{1,2}\s?°\s?\d{1,2}\s?['’]\s?\d{1,2}(\.\d+)?\s?["”]?\s?[EW]|STATION[^.]{0,20}OFFSET/, T))) say("4a", true, `Found: ${m}`);
     if ((m = snip(/(REAL[- ]TIME KINEMATIC|\bRTK\b|\bGNSS\b|\bGPS\b|TOTAL STATION|(LOCATED|ESTABLISHED) (BY|UTILIZING|USING))[^.]{0,60}/, T))) say("4b", true, `Found: ${m}`);
-    if ((m = snip(/MEAN HIGH WATER[^.]{0,60}ELEVATION[^.]{0,30}\d+\.\d+[^.]{0,40}/, T)) && /LOCATED/.test(T)) say("4c", true, `Found: ${m}${sv.located ? `, located ${mdyyyy(sv.located)}` : ""}`);
+    if ((m = snip(/MEAN HIGH WATER[\s\S]{0,60}?ELEVATION[\s\S]{0,30}?\d*\.\d+[^.]{0,40}/, T)) && /LOCATED/.test(T)) say("4c", true, `Found: ${m}${sv.located ? `, located ${mdyyyy(sv.located)}` : ""}`);
     const wb = v("waterbody").toUpperCase(); if (wb) say("4d", T.includes(wb) ? true : null, T.includes(wb) ? `Found "${v("waterbody")}" on the survey.` : `"${v("waterbody")}" wasn't found in the survey text.`);
     if ((m = snip(/PROCEDURAL APPROVAL[^.]{0,60}/, T))) say("5", true, `Found: ${m}`);
     const vic = /(VICINITY|LOCATION|LOCATOR|LOCUS|SITE|KEY|AREA) (MAP|SKETCH|PLAN)|\bVICINITY\b/.test(T);
@@ -1781,7 +1831,7 @@ function autoChecks() {
     else if (vic) { const b = S.live.str && (S.live.str.section || S.live.str.township) ? ` BLM shows ${strLabel(S.live.str)} at the project point;` : ""; say("6", null, `Found a vicinity sketch.${b} section, township and range couldn't be read from the sketch text, so check them on the sketch by eye.`); }
     else if (sv.str) say("6", null, `Section ${sv.str.section}, Township ${strDir(sv.str.township, sv.str.twpDir)}, Range ${strDir(sv.str.range, sv.str.rngDir)} found. The sketch label couldn't be read as text, so check the vicinity sketch by eye.`);
     if ((m = snip(/(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY/, T))) say("7", true, `Found in the title: ${snip(/[A-Z& ]{0,30}(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY/, T)}`);
-    if ((m = snip(/(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY[^.]{0,80}?COMPL(?:IES|Y|IANCE)\s+WITH\s+(?:THE\s+)?(?:CHAPTER|CH\.?)\s*177,?\s*PART\s*(?:II|2|TWO)\b[^.]{0,30}/, T))) say("8", true, `Found: ${m}`);
+    if ((m = snip(/(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY[\s\S]{0,120}?COMPL(?:IES|Y|IANCE)\s+WITH\s+(?:THE\s+)?(?:CHAPTER|CH\.?)\s*177[,.]?\s*(?:\S{1,3}\s+)?PART\s*(?:I[IL1]?|2|TWO|11|LL)\b[^.]{0,30}/, T))) say("8", true, `Found: ${m}`);
     else if ((m = snip(/(?:CHAPTER|CH\.?)\s*177[^.]{0,40}/, T))) say("8", null, `Similar wording found: ${m}`);
   }
   if (S.emailRead || (S.files.survey && S.files.approval)) say("9", true, S.emailRead ? "Checked: received by email." : "Checked: both PDFs supplied.");
