@@ -2050,6 +2050,8 @@ async function buildPackage() {
   // Letter/legal pages only: survey sheets never belong in the support package, even if one rides along in a PDF.
   for (const [, d] of parts) { const keep = d.getPageIndices().filter(i => { const { width, height } = d.getPage(i).getSize(); return Math.max(width, height) <= 17 * 72 + 2; });
     const pages = await out.copyPages(d, keep); pages.forEach(p => out.addPage(p)); }
+  // Ask the print window to default to one-sided printing (Kay prints these single-sided).
+  try { out.catalog.getOrCreateViewerPreferences().setDuplex(L.Duplex.Simplex); } catch (e) {}
   return out.save({ useObjectStreams: true });
 }
 const BUILDERS = { survey: buildReviewedSurvey, nof: async () => S.signedNof || buildNof(), tracking: buildTracking, checklist: buildChecklist, package: buildPackage };
