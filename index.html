@@ -1365,7 +1365,7 @@ async function onEmail(bytes, name) {
   if (survey) { await loadSurvey(survey.bytes, survey.name); got.push("survey"); }
   if (m.body) applyEmailBody(m.body);
   if (!v("email") && m.from && !/floridadep/i.test(m.from)) { const f = matchFirm("", m.from); if (f) { applyFirm(f, "firm on file"); } }
-  refresh(); renderChecks(); mapAutoCenter();
+  applyLive(); refresh(); renderChecks(); mapAutoCenter();
   toast(got.length ? `Pulled the ${got.join(" and ")} from the email` : (m.attachments.length ? "No survey PDFs found in the email" : "Read the email. Add the survey and approval PDFs."));
 }
 
@@ -1447,13 +1447,18 @@ async function readSurvey(bytes) {
     const bits = [];
     for (const a of await page.getAnnotations()) { if (a.fieldType === "Sig") out0.signed = true; const s = (a.contentsObj && a.contentsObj.str) || a.contents; if (s) bits.push(s.trim()); }
     const tc = await page.getTextContent(); bits.push(tc.items.map(i => i.str).join(" "));
-    if (p === 1) for (const it of tc.items) { const dm = it.str.match(DATE_RE); if (dm && it.transform) { const score = it.transform[4] / vp.width - it.transform[5] / vp.height; if (!out0.corner || score > out0.corner.score) out0.corner = { score, date: dm[1] }; } }
+    if (p === 1) for (const it of tc.items) { const dm = it.str.match(DATE_RE); if (dm && it.transform) { const [vx, vy] = vp.convertToViewportPoint(it.transform[4], it.transform[5]); const score = vx / vp.width + vy / vp.height; if (!out0.corner || score > out0.corner.score) out0.corner = { score, date: dm[1] }; } }
     for (const b of bits) { if (b.length < 40) { const set = strings.get(b) || new Set(); set.add(p); strings.set(b, set); } }
     all += "\n" + bits.join("\n");
   }
-  const U = all.toUpperCase().replace(/%%D/g, "°").replace(/\s+/g, " "); const out = { pages, doc, text: U, signed: !!out0.signed };
+  out0.noText = all.replace(/\s+/g, "").length < 150;
+  const U = all.toUpperCase().replace(/%%D/g, "°").replace(/\s+/g, " "); const out = { pages, doc, text: U, signed: !!out0.signed, noText: out0.noText };
   let m = U.match(/SECTION:?\s*([A-Z0-9 .'-]+?)\s*[-–,]\s*TOWNSHIP:?\s*(\d+|N\/A)\s*(SOUTH|NORTH|S|N)?\s*[-–,]?\s*RANGE:?\s*(\d+|N\/A)\s*(EAST|WEST|E|W)?\b/);
   if (!m) m = U.match(/SEC(?:TION|\.)?\s*(\d+)\s*,?\s*T(?:OWNSHIP|WP\.?)?\s*(\d+)\s*(S|N|SOUTH|NORTH)\s*,?\s*R(?:ANGE|GE\.?|NG\.?)?\s*(\d+)\s*(E|W|EAST|WEST)\b/);
+  if (!m) m = U.match(/\bS(?:EC(?:TION|T)?)?\.?\s*:?\s*(\d{1,2})\s*[,;\-–]?\s*(?:OF\s+)?T(?:OWNSHIP|WP|WN)?\.?\s*:?\s*-?\s*(\d{1,2})\s*-?\s*(SOUTH|NORTH|S|N)\.?\s*[,;\-–]?\s*R(?:ANGE|GE|NG)?\.?\s*:?\s*-?\s*(\d{1,2})\s*-?\s*(EAST|WEST|E|W)\b/);
+  if (!m) { const r = U.match(/\bT(?:OWNSHIP|WP|WN)?\.?\s*-?\s*(\d{1,2})\s*-?\s*(SOUTH|NORTH|S|N)\.?\s*[,;\-–]?\s*R(?:ANGE|GE|NG)?\.?\s*-?\s*(\d{1,2})\s*-?\s*(EAST|WEST|E|W)\.?\s*[,;\-–]?\s*(?:IN\s+)?SEC(?:TION|T)?\.?\s*:?\s*(\d{1,2})\b/); if (r) m = [r[0], r[5], r[1], r[2], r[3], r[4]]; }
+  if (!m) m = U.match(/(?:S-T-R|S\/T\/R|SEC(?:TION)?[\s\/-]*T(?:WP|OWNSHIP)[\s\/-]*R(?:GE|NG|ANGE))\s*:?\s*(\d{1,2})\s*[-\/]\s*(\d{1,2})\s*(S|N)?\s*[-\/]\s*(\d{1,2})\s*(E|W)?\b/);
+  if (!m) m = U.match(/\b(\d{1,2})\s*-\s*(\d{1,2})\s*(S|N)\s*-\s*(\d{1,2})\s*(E|W)\b/);
   if (m) out.str = { section: titleCase(m[1].trim()), township: m[2], twpDir: (m[3] || "")[0] || "", range: m[4], rngDir: (m[5] || "")[0] || "" };
   m = U.match(/LOCATED\s+(?:BY\s+.{1,60}?\s+)?(?:ON\s+)?((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/);
   if (m) out.located = toISO(m[1]);
@@ -1466,7 +1471,7 @@ async function readSurvey(bytes) {
   let best = null;
   for (const [s, set] of strings) { const t = s.toUpperCase(); if (jobRe.test(t) && !/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(t) && !/^\d+-\d+$/.test(t) && !/^\d+\/\d+(-\d+)?$/.test(t) && set.size === doc.numPages) { if (!best || s.length > best.length) best = s; } }
   if (best) out.jobNo = best;
-  m = U.match(/\b(?:JOB|FILE)\s*(?:NO\.?|NUMBER|NUM\.?|#)\s*[:#]?\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/);
+  m = U.match(/\b(?:JOB|FILE)\s*(?:NO\.?|NUMBER|NUM\.?|#)\s*[:#.]?\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/) || U.match(/\b(?:JOB|FILE)\s*:\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/);
   if (m) out.jobNo = m[1].replace(/[\/-]+$/, "");
   return out;
 }
@@ -1518,9 +1523,10 @@ function applySurvey(r) {
   found.push(`${r.pages.length} sheet${r.pages.length > 1 ? "s" : ""}, ${r.pages.map(p => `${(Math.min(p.w, p.h) / 72).toFixed(0)}" x ${(Math.max(p.w, p.h) / 72).toFixed(0)}"`).join(", ")}`);
   if (r.mhwElev) found.push(`MHW elevation ${r.mhwElev} ft NAVD88 on the survey` + (S.approvalRead?.mhwElev ? `, ${S.approvalRead.mhwElev} ft on the approval` : ""));
   if (r.located) found.push(r.dateFrom ? `Survey date ${mdyyyy(r.located)} (from the ${r.dateFrom}; check it)` : `MHW located ${mdyyyy(r.located)}`);
+  if (r.noText) found.push("This survey PDF has almost no readable text (it was likely scanned or plotted as drawing lines), so the job number, date and section can't be read from it. They'll come from the map, the approval and the email where possible; type anything still blank.");
   if (!r.jobNo && !v("jobNo")) found.push("No job number found in the survey text. Type it from the title block.");
   if (r.str && S.approvalRead && (S.approvalRead.sec || S.approvalRead.twp)) found.push(`Approval lists Sec ${S.approvalRead.sec || "-"}, Twp ${S.approvalRead.twp || "-"}, Rge ${S.approvalRead.rge || "-"}`);
-  S.surveyFound = found; renderFound(); applyAuto(); renderChecks();
+  S.surveyFound = found; renderFound(); applyLive(); applyAuto(); renderChecks();
 }
 function renderFound() {
   const f = S.surveyFound || []; const el = $("found"); el.hidden = !f.length;
@@ -1601,6 +1607,19 @@ function identify(url, lat, lon, tolPx) {
   return jsonp(url + "/identify", { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", sr: "4326", layers: "all", tolerance: String(tolPx),
     mapExtent: `${lon - d},${lat - d},${lon + d},${lat + d}`, imageDisplay: "800,800,96", returnGeometry: "false" });
 }
+async function plssAt(lat, lon) {
+  const q = (layer) => jsonp(SVC.plss + "/" + layer + "/query", { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "*", returnGeometry: "false" }, 30000)
+    .then(d => ({ results: (d.features || []).map(f => ({ layerName: "PLSS", attributes: f.attributes })) }));
+  for (const get of [() => q(3), () => Promise.all([q(1), q(2)]).then(([a, b]) => ({ results: [...a.results, ...b.results] })), () => identify(SVC.plss, lat, lon, 2)]) {
+    try { const d = await get(); const x = parsePlss(d); if (x.section || x.township || x.range) return d; } catch (e) { /* try the next way */ }
+  }
+  throw new Error("BLM didn't answer for this point");
+}
+function applyLive() {
+  const L2 = S.live || {};
+  if (L2.str) fillStr(L2.str, false);
+  if (L2.waters && L2.waters.length && (!v("waterbody") || srcOf("waterbody") === "USGS map")) setVal("waterbody", L2.waters[0], "USGS map");
+}
 function attr(a, re) { for (const k of Object.keys(a || {})) if (re.test(k)) { const v0 = a[k]; if (v0 != null && String(v0).trim() !== "" && !/^null$/i.test(String(v0))) return String(v0).trim(); } return ""; }
 function parseQuad(d) {
   const rs = (d && d.results) || []; const r = rs.find(r => /7\.5|24k|24,000/i.test(r.layerName) && attr(r.attributes, /cell_?name|^name$/i)) || rs.find(r => attr(r.attributes, /cell_?name/i));
@@ -1613,8 +1632,10 @@ function parsePlss(d) {
     if (!out.township) { const tn = attr(a, /^twnshpno$|township number/i); if (tn) { out.township = String(parseInt(tn, 10)); out.twpDir = attr(a, /^twnshpdir$|township direction/i).charAt(0).toUpperCase(); } }
     if (!out.range) { const rn = attr(a, /^rangeno$|range number/i); if (rn) { out.range = String(parseInt(rn, 10)); out.rngDir = attr(a, /^rangedir$|range direction/i).charAt(0).toUpperCase(); } }
     if (!out.section) { const typ = attr(a, /^frstdivtyp$|first division type/i); const no = attr(a, /^frstdivno$|first division number/i); const lab = attr(a, /^frstdivlab$|first division label/i); const txt = attr(a, /^frstdivtxt$|first division text/i);
-      if (no || lab) out.section = (!typ || /^SN$/i.test(typ)) && /^\d+$/.test(no) ? String(parseInt(no, 10)) : titleCase(txt || lab || no); }
+      if (no || lab) out.section = (!typ || /^SN$|^section$/i.test(typ)) && /^\d+$/.test(no) ? String(parseInt(no, 10)) : titleCase(txt || lab || no); }
     if (!out.raw) out.raw = attr(a, /^twnshplab$|township label/i);
+    for (const val of Object.values(a || {})) { const c = String(val).match(/^[A-Z]{2}\d{2}(\d{3})\d([NS])(\d{3})\d([EW])\d(?:SN(\d{2})\d)?/);
+      if (c) { if (!out.township) { out.township = String(+c[1]); out.twpDir = c[2]; } if (!out.range) { out.range = String(+c[3]); out.rngDir = c[4]; } if (!out.section && c[5]) out.section = String(+c[5]); } }
   }
   return out;
 }
@@ -1649,23 +1670,25 @@ function renderLookup() {
   if (L2.waters) { const wb = v("waterbody").toLowerCase(); const hit = L2.waters.some(n => n.toLowerCase() === wb || (wb && (n.toLowerCase().includes(wb) || wb.includes(n.toLowerCase()))));
     h += row("Waterbody (USGS)", L2.waters.length ? "Nearby: " + L2.waters.slice(0, 5).join(", ") : "No named water within about 100 m", v("waterbody"), L2.waters.length ? hit : null, L2.waters.length ? "water" : ""); }
   if (!L2.loading && (L2.quad !== undefined || L2.str || L2.waters)) h += `<span class="small muted" style="grid-column:1/-1">Checked automatically at ${L2.auto === "survey" ? "the survey's coordinates" : L2.auto === "address" ? "the project address" : "the point you clicked"} (${L2.point[0].toFixed(6)}, ${L2.point[1].toFixed(6)}) against the USGS quad index and USGS water map (the layers LABINS shows) and the BLM section grid.</span>`;
-  if (L2.errors && L2.errors.length) h += `<span class="err" style="grid-column:1/-1">${escapeHtml(L2.errors.join(" "))}</span>`;
+  if (L2.errors && L2.errors.length) h += `<span class="err" style="grid-column:1/-1">${escapeHtml(L2.errors.join(" "))} <button class="small" type="button" data-use="retry">Try again</button></span>`;
   box.innerHTML = h;
   box.querySelectorAll("[data-use]").forEach(b => b.addEventListener("click", () => {
     if (b.dataset.use === "quad") setVal("quad", L2.quad, "USGS map");
     if (b.dataset.use === "water") setVal("waterbody", L2.waters[0], "USGS map");
     if (b.dataset.use === "str") fillStr(L2.str, true);
+    if (b.dataset.use === "retry") { runLookups(L2.point[0], L2.point[1]); return; }
     refresh(); renderLookup();
   }));
 }
 async function runLookups(lat, lon) {
   S.live = { point: [lat, lon], loading: true, errors: [] }; renderLookup();
-  const [q, p, w] = await Promise.allSettled([identify(SVC.quad, lat, lon, 2), identify(SVC.plss, lat, lon, 2), identify(SVC.nhd, lat, lon, 40)]);
+  const [q, p, w] = await Promise.allSettled([identify(SVC.quad, lat, lon, 2), plssAt(lat, lon), identify(SVC.nhd, lat, lon, 40)]);
   if (!S.live.point || S.live.point[0] !== lat || S.live.point[1] !== lon) return;
   S.live.loading = false;
   if (q.status === "fulfilled") S.live.quad = parseQuad(q.value); else S.live.errors.push(`Quad lookup failed (${q.reason.message}).`);
-  if (p.status === "fulfilled") { S.live.str = parsePlss(p.value); fillStr(S.live.str, false); } else S.live.errors.push(`Section lookup failed (${p.reason.message}).`);
-  if (w.status === "fulfilled") { S.live.waters = parseWaters(w.value); if (S.live.waters.length && (!v("waterbody") || srcOf("waterbody") === "USGS map")) setVal("waterbody", S.live.waters[0], "USGS map"); } else S.live.errors.push(`Waterbody lookup failed (${w.reason.message}).`);
+  if (p.status === "fulfilled") S.live.str = parsePlss(p.value); else S.live.errors.push(`Section lookup failed (${p.reason.message}).`);
+  if (w.status === "fulfilled") S.live.waters = parseWaters(w.value); else S.live.errors.push(`Waterbody lookup failed (${w.reason.message}).`);
+  applyLive();
   renderLookup(); refresh();
 }
 function fmtLon(x) { const a = Math.abs(x).toFixed(6); const [d, f] = a.split("."); return d.padStart(3, "0") + "." + f; }
@@ -1753,12 +1776,13 @@ function autoChecks() {
     if ((m = snip(/MEAN HIGH WATER[^.]{0,60}ELEVATION[^.]{0,30}\d+\.\d+[^.]{0,40}/, T)) && /LOCATED/.test(T)) say("4c", true, `Found: ${m}${sv.located ? `, located ${mdyyyy(sv.located)}` : ""}`);
     const wb = v("waterbody").toUpperCase(); if (wb) say("4d", T.includes(wb) ? true : null, T.includes(wb) ? `Found "${v("waterbody")}" on the survey.` : `"${v("waterbody")}" wasn't found in the survey text.`);
     if ((m = snip(/PROCEDURAL APPROVAL[^.]{0,60}/, T))) say("5", true, `Found: ${m}`);
-    const vic = /(VICINITY|LOCATION|LOCATOR|SITE|KEY|AREA) (MAP|SKETCH)|\bVICINITY\b/.test(T);
+    const vic = /(VICINITY|LOCATION|LOCATOR|LOCUS|SITE|KEY|AREA) (MAP|SKETCH|PLAN)|\bVICINITY\b/.test(T);
     if (vic && sv.str) { const dirs = sv.str.twpDir || /N\/A/.test(sv.str.township); say("6", dirs ? true : null, `Found a vicinity sketch with Section ${sv.str.section}, Township ${strDir(sv.str.township, sv.str.twpDir)}, Range ${strDir(sv.str.range, sv.str.rngDir)}${dirs ? "" : ". Township and range directions weren't found"}.`); }
+    else if (vic) { const b = S.live.str && (S.live.str.section || S.live.str.township) ? ` BLM shows ${strLabel(S.live.str)} at the project point;` : ""; say("6", null, `Found a vicinity sketch.${b} section, township and range couldn't be read from the sketch text, so check them on the sketch by eye.`); }
     else if (sv.str) say("6", null, `Section ${sv.str.section}, Township ${strDir(sv.str.township, sv.str.twpDir)}, Range ${strDir(sv.str.range, sv.str.rngDir)} found. The sketch label couldn't be read as text, so check the vicinity sketch by eye.`);
     if ((m = snip(/(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY/, T))) say("7", true, `Found in the title: ${snip(/[A-Z& ]{0,30}(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY/, T)}`);
-    if ((m = snip(/TIDAL WATER SURVEY[^.]{0,50}COMPLIES WITH CHAPTER 177,? PART II,? FLORIDA STATUTES/, T))) say("8", true, `Found: ${m}`);
-    else if ((m = snip(/COMPLIES WITH CHAPTER 177[^.]{0,40}/, T))) say("8", null, `Similar wording found: ${m}`);
+    if ((m = snip(/(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY[^.]{0,80}?COMPL(?:IES|Y|IANCE)\s+WITH\s+(?:THE\s+)?(?:CHAPTER|CH\.?)\s*177,?\s*PART\s*(?:II|2|TWO)\b[^.]{0,30}/, T))) say("8", true, `Found: ${m}`);
+    else if ((m = snip(/(?:CHAPTER|CH\.?)\s*177[^.]{0,40}/, T))) say("8", null, `Similar wording found: ${m}`);
   }
   if (S.emailRead || (S.files.survey && S.files.approval)) say("9", true, S.emailRead ? "Checked: received by email." : "Checked: both PDFs supplied.");
   if (sv) say("9a", sv.signed ? true : null, sv.signed ? "Checked: the survey PDF carries a digital signature." : "No digital signature found in the survey PDF.");
@@ -2509,7 +2533,7 @@ function wireDrop(dropId, inputId, handler) {
 async function onApproval(bytes, name) {
   clearFrom("approval", "firm on file");
   S.files.approval = { bytes, name }; $("nameApproval").textContent = name; $("dropApproval").classList.add("has");
-  try { const a = await readApproval(bytes); if (!Object.keys(a).length) toast("Couldn't find the procedural approval in that PDF. Fill the details by hand, or send the file to Claude in the project."); else { await applyApproval(a); toast("Filled the details from the procedural approval"); if (!S.example) mapAutoCenter(); } }
+  try { const a = await readApproval(bytes); if (!Object.keys(a).length) toast("Couldn't find the procedural approval in that PDF. Fill the details by hand, or send the file to Claude in the project."); else { await applyApproval(a); applyLive(); toast("Filled the details from the procedural approval"); if (!S.example) mapAutoCenter(); } }
   catch (e) { console.error(e); toast("Couldn't read the approval. Fill the details by hand."); }
   refresh();
 }
