@@ -1025,7 +1025,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
           <button class="small" type="button" id="btnAutoPlace">Find open space again</button><span class="small muted" id="stageInfo"></span>
         </div>
         <p class="small muted" style="margin:6px 0 0">Drag the block to move it. Drag the bottom-right corner (or use Size) to shrink it, and drag the right-side handle (or use Width) to make it wider and flatter. The disclaimer re-wraps to fit.</p>
-        <div class="row" style="margin-top:12px"><button class="primary" type="button" data-save="survey">Save the reviewed survey</button><button class="small" type="button" data-prev="survey">Preview</button></div>
+        <div class="row" style="margin-top:12px"><button class="primary" type="button" data-save="survey">Save the reviewed survey</button><button class="small" type="button" data-prev="survey">Preview</button><button class="small" type="button" id="btnPrintSurvey">Print</button></div>
       </section>
 
       <section class="step" id="s5sign">
@@ -1087,7 +1087,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
           </div>
         </div>
         <p class="small muted" style="margin:8px 0 0"><span id="nofAuto"></span> <button class="linkish" type="button" id="btnOtherNof">Use a different signed copy</button></p>
-        <div class="doclist" style="margin-top:14px"><span class="name" id="nmPkg">MHW#### Support Documents.pdf</span><button class="small" type="button" data-prev="package">Preview</button><button class="small" type="button" data-save="package">Save</button>
+        <div class="doclist" style="margin-top:14px"><span class="name" id="nmPkg">MHW#### Support Documents.pdf</span><button class="small" type="button" data-prev="package">Preview</button><button class="small" type="button" data-save="package">Save</button><button class="small" type="button" id="btnPrintPkg">Print</button>
           <span class="small muted">Inside it: <button class="linkish" type="button" data-prev="tracking">tracking form</button> and <button class="linkish" type="button" data-prev="checklist">checklist</button></span></div>
         <p class="small muted" id="pkgMeta" style="margin:0"></p>
       </section>
@@ -1176,7 +1176,9 @@ const HEAD_H = 30; // two bold heading lines above the disclaimer paragraph
 const BLOCK = { w: 229, h: 321, mhw: { x: 22, base: 34, size: 36 }, box: { x: 0, y: 56, w: 225, h: 205 }, stamp: { x: 4, y: 277, w: 225, h: 44 } };
 // The block can be stretched wider ("flatter"): the disclaimer re-wraps to the new width and the block gets shorter.
 // At the normal width it keeps the exact MHW9681 line breaks.
-function blockLayout() {
+// The filing number and the REVIEWED stamp are centered on the disclaimer box (Kay, 2026-10-16).
+function blockLayout() { const B = blockLayout0(); return { ...B, stamp: { ...B.stamp, x: B.box.x + (B.box.w - B.stamp.w) / 2 } }; }
+function blockLayout0() {
   const wf = S.blockWide || 1;
   if (wf <= 1.001 || !S.fontH) return { ...BLOCK, head: HEADING_LINES, headH: HEAD_H, lines: DISCLAIMER_LINES };
   const w = Math.round(BLOCK.w * wf), boxW = w - (BLOCK.w - BLOCK.box.w);
@@ -1518,7 +1520,7 @@ async function readSurvey(bytes) {
     pages.push({ w: vp.width, h: vp.height });
     const bits = [];
     for (const a of await page.getAnnotations()) { if (a.fieldType === "Sig") out0.signed = true; const s = (a.contentsObj && a.contentsObj.str) || a.contents; if (s) bits.push(s.trim()); }
-    const tc = await page.getTextContent(); bits.push(tc.items.map(i => i.str).join(" "));
+    const tc = await page.getTextContent(); bits.push(tc.items.map(i => i.str).join(" ")); (out0.items = out0.items || []).push(...tc.items.map(i => i.str));
     if (p === 1) for (const it of tc.items) { const dm = it.str.match(DATE_RE); if (dm && it.transform && recentDate(dm[1])) { const [vx, vy] = vp.convertToViewportPoint(it.transform[4], it.transform[5]); if (vx / vp.width < 0.75 || vy / vp.height < 0.6) continue; const score = vx / vp.width + vy / vp.height; if (!out0.corner || score > out0.corner.score) out0.corner = { score, date: dm[1] }; } }
     for (const b of bits) { if (b.length < 40) { const set = strings.get(b) || new Set(); set.add(p); strings.set(b, set); } }
     all += "\n" + bits.join("\n");
@@ -1555,9 +1557,27 @@ async function readSurvey(bytes) {
   let best = null;
   for (const [s, set] of strings) { const t = s.toUpperCase(); if (jobRe.test(t) && !/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(t) && !/^\d+-\d+$/.test(t) && !/^\d+\/\d+(-\d+)?$/.test(t) && set.size === doc.numPages) { if (!best || s.length > best.length) best = s; } }
   if (best) out.jobNo = best;
+  out.waterbody = surveyWater([...(out0.items || []), ...(out0.ocr ? all.split("\n") : [])]);
   m = U.match(/\b(?:JOB|FILE)\s*(?:NO\.?|NUMBER|NUM\.?|#)\s*[:#.]?\s*(?:[^\s\d]{1,3}\s+){0,3}((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]{2,})/) || U.match(/\b(?:JOB|FILE)\s*:\s*((?=[A-Z0-9\/-]*\d)[A-Z0-9][A-Z0-9\/-]*)/);
   if (m) out.jobNo = m[1].replace(/[\/-]+$/, "");
   return out;
+}
+// The waterbody as the surveyor labeled it: a short stand-alone label ending in a water word ("WATERWAY", "JUPITER SOUND").
+function surveyWater(lines) {
+  const W = /\b(INTRACOASTAL WATERWAY|WATERWAY|CANAL|BAY|SOUND|RIVER|CREEK|LAGOON|BAYOU|INLET|HARBOR|LAKE|BASIN|GULF OF (?:MEXICO|AMERICA)|ATLANTIC OCEAN|OCEAN)$/;
+  const counts = new Map();
+  for (let l of lines) {
+    l = String(l).toUpperCase().replace(/[^A-Z' ]/g, " ").replace(/\s+/g, " ").trim();
+    if (/^(?:[A-Z] ){3,}[A-Z]/.test(l)) l = l.replace(/\b([A-Z]) (?=[A-Z]\b)/g, "$1").replace(/  +/g, " "); // "J U P I T E R"
+    if (!l || l.length > 40 || l.split(" ").length > 4 || !W.test(l)) continue;
+    if (!l.includes(" ") && !/^(WATERWAY|CANAL|LAGOON|BASIN)$/.test(l)) continue; // a lone "HARBOR" or "BAY" is usually part of a street or place name
+    if (/\b(FL|FLORIDA|OF THE|PER|SEE|NOTE|HWY|HIGHWAY|ROAD|RD|ST|BLVD|DRIVE|DR|AVE|WAY|LANE|LN|COURT|CT|MAP|SUBDIVISION|UNIT|PLAT|ESTATES)\b/.test(l)) continue;
+    counts.set(l, (counts.get(l) || 0) + 1);
+  }
+  // A plain "WATERWAY"/"CANAL" label is the surveyor naming the water at the site; big named waters often come from the vicinity sketch.
+  const generic = [...counts.keys()].find(k => /^(INTRACOASTAL )?(WATERWAY|CANAL|LAGOON|BASIN)$/.test(k)); if (generic) return titleCase(generic);
+  let pick = ""; for (const [k, n] of counts) if (!pick || n > counts.get(pick) || (n === counts.get(pick) && k.length > pick.length)) pick = k;
+  return pick ? titleCase(pick) : "";
 }
 function titleCase(s) { return s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()); }
 
@@ -1596,6 +1616,7 @@ function applyFirm(f, src) {
   if (!v("psm") && f.psm) setVal("psm", f.psm, src);
 }
 function applySurvey(r) {
+  if (r.waterbody && !(v("waterbody") && srcOf("waterbody") === "approval")) setVal("waterbody", r.waterbody, "survey");
   if (r.jobNo && !(v("jobNo") && srcOf("jobNo") === "approval")) setVal("jobNo", r.jobNo, "survey");
   if (r.located) setVal("surveyDate", r.located, "survey");
   if (r.str) {
@@ -1672,6 +1693,7 @@ function renderChecks() {
 /* ---------- map and live location lookups ---------- */
 const SVC = {
   plss: "https://gis.blm.gov/arcgis/rest/services/Cadastral/BLM_Natl_PLSS_CadNSDI/MapServer",
+  trs: "https://services1.arcgis.com/O1JpcwDW8sjYuddV/ArcGIS/rest/services/TRS_LABINS/FeatureServer/0",
   quad: "https://carto.nationalmap.gov/arcgis/rest/services/map_indices/MapServer",
   nhd: "https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer",
   geocode: "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates",
@@ -1691,6 +1713,16 @@ function identify(url, lat, lon, tolPx) {
   const d = 0.01;
   return jsonp(url + "/identify", { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", sr: "4326", layers: "all", tolerance: String(tolPx),
     mapExtent: `${lon - d},${lat - d},${lon + d},${lat + d}`, imageDisplay: "800,800,96", returnGeometry: "false" });
+}
+// Florida's LABINS township/range/section layer, hosted on ArcGIS Online (fast, answers reliably).
+async function labinsStr(lat, lon) {
+  const d = await jsonp(SVC.trs + "/query", { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "sec,twn,rng,tdir,rdir", returnGeometry: "false" }, 15000);
+  const a = d.features && d.features[0] && d.features[0].attributes; if (!a || !a.twn) throw new Error("no section here");
+  return { section: a.sec ? String(a.sec) : "", township: String(Math.abs(a.twn)), twpDir: String(a.tdir || (a.twn < 0 ? "S" : "N")).charAt(0).toUpperCase(), range: String(Math.abs(a.rng)), rngDir: String(a.rdir || "E").charAt(0).toUpperCase(), from: "LABINS" };
+}
+async function strAt(lat, lon) {
+  try { return await labinsStr(lat, lon); } catch (e) { /* fall back to BLM */ }
+  return { ...parsePlss(await plssAt(lat, lon)), from: "BLM" };
 }
 async function plssAt(lat, lon) {
   const q = (layer) => jsonp(SVC.plss + "/" + layer + "/query", { geometry: `${lon},${lat}`, geometryType: "esriGeometryPoint", inSR: "4326", spatialRel: "esriSpatialRelIntersects", outFields: "*", returnGeometry: "false" }, 30000)
@@ -1739,22 +1771,22 @@ function enteredStr() { return { section: v("section"), township: v("township"),
 // (or ones an earlier BLM lookup filled) change, so values read from the survey or typed in stay.
 function fillStr(x, force) {
   if (!x || !(x.section || x.township || x.range)) return;
-  const mine = (id) => force || !v(id) || srcOf(id) === "BLM";
-  if (mine("section")) setVal("section", x.section || "N/A", "BLM");
-  if (mine("township")) { setVal("township", x.township || "N/A", "BLM"); $("twpDir").value = x.twpDir || ""; }
-  if (mine("range")) { setVal("range", x.range || "N/A", "BLM"); $("rngDir").value = x.rngDir || ""; }
+  const tag = x.from || "BLM"; const mine = (id) => force || !v(id) || srcOf(id) === "BLM" || srcOf(id) === "LABINS";
+  if (mine("section")) setVal("section", x.section || "N/A", tag);
+  if (mine("township")) { setVal("township", x.township || "N/A", tag); $("twpDir").value = x.twpDir || ""; }
+  if (mine("range")) { setVal("range", x.range || "N/A", tag); $("rngDir").value = x.rngDir || ""; }
 }
 function renderLookup() {
   const box = $("lookup"); if (!box) return; const L2 = S.live;
   if (!L2.point) { box.innerHTML = `<span class="small muted" style="grid-column:1/-1">Click the project point to check the quad, waterbody and section.</span>`; return; }
-  const row = (label, map, entered, ok, useId) => `<span class="h">${label}</span><span>${escapeHtml(map)}</span><span class="muted">You entered: ${escapeHtml(entered || "nothing")}</span><span>${ok === null ? "" : ok ? '<span class="ok">✓ Matches</span>' : `<span class="no">✗ Differs</span> ${useId ? `<button class="small" type="button" data-use="${useId}">${useId === "str" ? "Use BLM" : "Use map"}</button>` : ""}`}</span>`;
+  const row = (label, map, entered, ok, useId) => `<span class="h">${label}</span><span>${escapeHtml(map)}</span><span class="muted">You entered: ${escapeHtml(entered || "nothing")}</span><span>${ok === null ? "" : ok ? '<span class="ok">✓ Matches</span>' : `<span class="no">✗ Differs</span> ${useId ? `<button class="small" type="button" data-use="${useId}">${useId === "str" ? "Use " + ((S.live.str && S.live.str.from) || "BLM") : "Use map"}</button>` : ""}`}</span>`;
   let h = "";
   if (L2.loading) h += `<span class="small muted" style="grid-column:1/-1">Checking USGS and BLM records at ${L2.point[0].toFixed(6)}, ${L2.point[1].toFixed(6)}…</span>`;
   if (L2.quad !== undefined) h += row("Quad (USGS)", L2.quad || "Not found", v("quad"), L2.quad ? L2.quad.toLowerCase() === v("quad").toLowerCase() : null, L2.quad ? "quad" : "");
-  if (L2.str) h += row("Sec / Twp / Rge (BLM)", strLabel(L2.str), strLabel(enteredStr()).replace(/none/g, "blank"), strMatch(enteredStr(), L2.str), "str");
+  if (L2.str) h += row(`Sec / Twp / Rge (${L2.str.from || "BLM"})`, strLabel(L2.str), strLabel(enteredStr()).replace(/none/g, "blank"), strMatch(enteredStr(), L2.str), "str");
   if (L2.waters) { const wb = v("waterbody").toLowerCase(); const hit = L2.waters.some(n => n.toLowerCase() === wb || (wb && (n.toLowerCase().includes(wb) || wb.includes(n.toLowerCase()))));
     h += row("Waterbody (USGS)", L2.waters.length ? "Nearby: " + L2.waters.slice(0, 5).join(", ") : "No named water within about 100 m", v("waterbody"), L2.waters.length ? hit : null, L2.waters.length ? "water" : ""); }
-  if (!L2.loading && (L2.quad !== undefined || L2.str || L2.waters)) h += `<span class="small muted" style="grid-column:1/-1">Checked automatically at ${L2.auto === "survey" ? "the survey's coordinates" : L2.auto === "address" ? "the project address" : "the point you clicked"} (${L2.point[0].toFixed(6)}, ${L2.point[1].toFixed(6)}) against the USGS quad index and USGS water map (the layers LABINS shows) and the BLM section grid.</span>`;
+  if (!L2.loading && (L2.quad !== undefined || L2.str || L2.waters)) h += `<span class="small muted" style="grid-column:1/-1">Checked automatically at ${L2.auto === "survey" ? "the survey's coordinates" : L2.auto === "address" ? "the project address" : "the point you clicked"} (${L2.point[0].toFixed(6)}, ${L2.point[1].toFixed(6)}) against the USGS quad index and USGS water map (the layers LABINS shows) and the ${L2.str && L2.str.from === "LABINS" ? "LABINS section layer" : "BLM section grid"}.</span>`;
   if (L2.errors && L2.errors.length) h += `<span class="err" style="grid-column:1/-1">${escapeHtml(L2.errors.join(" "))} <button class="small" type="button" data-use="retry">Try again</button></span>`;
   box.innerHTML = h;
   box.querySelectorAll("[data-use]").forEach(b => b.addEventListener("click", () => {
@@ -1767,11 +1799,11 @@ function renderLookup() {
 }
 async function runLookups(lat, lon) {
   S.live = { point: [lat, lon], loading: true, errors: [] }; renderLookup();
-  const [q, p, w] = await Promise.allSettled([identify(SVC.quad, lat, lon, 2), plssAt(lat, lon), identify(SVC.nhd, lat, lon, 40)]);
+  const [q, p, w] = await Promise.allSettled([identify(SVC.quad, lat, lon, 2), strAt(lat, lon), identify(SVC.nhd, lat, lon, 40)]);
   if (!S.live.point || S.live.point[0] !== lat || S.live.point[1] !== lon) return;
   S.live.loading = false;
   if (q.status === "fulfilled") S.live.quad = parseQuad(q.value); else S.live.errors.push(`Quad lookup failed (${q.reason.message}).`);
-  if (p.status === "fulfilled") S.live.str = parsePlss(p.value); else S.live.errors.push(`Section lookup failed (${p.reason.message}).`);
+  if (p.status === "fulfilled") S.live.str = p.value; else S.live.errors.push(`Section lookup failed (${p.reason.message}).`);
   if (w.status === "fulfilled") S.live.waters = parseWaters(w.value); else S.live.errors.push(`Waterbody lookup failed (${w.reason.message}).`);
   applyLive();
   renderLookup(); refresh();
@@ -1786,7 +1818,9 @@ function initMap() {
   LF.tileLayer(SVC.tiles + "Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxZoom: 21, maxNativeZoom: 19 }).addTo(map);
   const overlays = {};
   if (LF.esri) {
-    overlays["Sections (BLM PLSS)"] = LF.esri.dynamicMapLayer({ url: SVC.plss, opacity: 0.85, useCors: false }).addTo(map);
+    overlays["Sections (LABINS)"] = LF.esri.featureLayer({ url: SVC.trs, minZoom: 12, fields: ["FID", "sec", "twn", "rng", "tdir", "rdir"], style: () => ({ color: "#FFD400", weight: 2, fill: false }) })
+      .bindTooltip((l) => { const a = l.feature.properties; return `Section ${a.sec}, T${Math.abs(a.twn)}${a.tdir || ""} R${Math.abs(a.rng)}${a.rdir || ""}`; }, { sticky: true }).addTo(map);
+    overlays["Sections (BLM PLSS)"] = LF.esri.dynamicMapLayer({ url: SVC.plss, opacity: 0.85, useCors: false });
     overlays["USGS quad grid"] = LF.esri.dynamicMapLayer({ url: SVC.quad, opacity: 0.85, useCors: false });
     overlays["Water features (NHD)"] = LF.esri.dynamicMapLayer({ url: SVC.nhd, opacity: 0.6, useCors: false });
   }
@@ -1965,12 +1999,12 @@ function blockSVG() {
   const lines = heads + B.lines.map((t, i) => `<text x="${B.box.x + B.box.w / 2}" y="${B.box.y + 16 + B.headH + i * 16.4}" text-anchor="middle" font-size="14" fill="#000080">${escapeHtml(t)}</text>`).join("");
   return `<svg viewBox="0 0 ${B.w} ${B.h}" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
     <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#EEF4FF"/><stop offset="1" stop-color="#D3D7EB"/></linearGradient></defs>
-    <text x="${B.mhw.x}" y="${B.mhw.base}" font-size="36" fill="#000000">${escapeHtml(mhw())}</text>
+    <text x="${B.box.x + B.box.w / 2}" y="${B.mhw.base}" text-anchor="middle" font-size="36" fill="#000000">${escapeHtml(mhw())}</text>
     <rect x="${B.box.x + .5}" y="${B.box.y + .5}" width="${B.box.w - 1}" height="${B.box.h - 1}" fill="#FFFFFF" stroke="#000080"/>
     ${lines}
     <rect x="${B.stamp.x + .6}" y="${B.stamp.y + .6}" width="${B.stamp.w - 1.2}" height="${B.stamp.h - 1.2}" rx="6" fill="url(#g)" stroke="#1F2A66" stroke-width="1.2"/>
-    <text x="${B.stamp.x + 7}" y="${B.stamp.y + 21}" font-size="15" font-weight="700" font-style="italic" fill="#1F2A66" textLength="80" lengthAdjust="spacingAndGlyphs">REVIEWED</text>
-    <text x="${B.stamp.x + 6}" y="${B.stamp.y + 36}" font-size="10" font-weight="700" font-style="italic" fill="#1F2A66">By ${escapeHtml(who)} at ${escapeHtml(stampWhen())}</text>
+    <text x="${B.stamp.x + B.stamp.w / 2}" y="${B.stamp.y + 21}" text-anchor="middle" font-size="15" font-weight="700" font-style="italic" fill="#1F2A66" textLength="80" lengthAdjust="spacingAndGlyphs">REVIEWED</text>
+    <text x="${B.stamp.x + B.stamp.w / 2}" y="${B.stamp.y + 36}" text-anchor="middle" font-size="10" font-weight="700" font-style="italic" fill="#1F2A66">By ${escapeHtml(who)} at ${escapeHtml(stampWhen())}</text>
   </svg>`;
 }
 function drawBlock() {
@@ -2099,7 +2133,7 @@ async function buildReviewedSurvey() {
     const k = S.blockScale || 1;
     const o = [L.pushGraphicsState(), op("cm", c * k, s * k, -s * k, c * k, ox, oy)];
     const B = blockLayout(); const Y = (dy) => -dy;
-    o.push(...textOps(page, helv, B.mhw.size, mhw(), B.mhw.x, Y(B.mhw.base), [0, 0, 0]));
+    o.push(...textOps(page, helv, B.mhw.size, mhw(), B.box.x + (B.box.w - helv.widthOfTextAtSize(mhw(), B.mhw.size)) / 2, Y(B.mhw.base), [0, 0, 0]));
     o.push(op("rg", 1, 1, 1), op("RG", ...NAVY), op("w", 1), op("re", B.box.x + .5, Y(B.box.y + B.box.h) + .5, B.box.w - 1, B.box.h - 1), op("B"));
     B.head.forEach((t, k) => {
       const tw = hb.widthOfTextAtSize(t, 12);
@@ -2114,9 +2148,9 @@ async function buildReviewedSurvey() {
     const bands = 40, a = [0.933, 0.957, 1], b = [0.827, 0.843, 0.922];
     for (let k = 0; k < bands; k++) { const t = k / (bands - 1); o.push(op("rg", ...a.map((x, j) => x + (b[j] - x) * t)), op("re", sx0 + k * sw / bands, sy0, sw / bands + .5, sh), op("f")); }
     o.push(L.popGraphicsState(), op("RG", ...STAMP_INK), op("w", 1.2), ...roundedPath(sx0, sy0, sw, sh, 6), op("S"));
-    o.push(...textOps(page, bi, 15, "REVIEWED", st.x + 7, Y(st.y + 21), STAMP_INK, 82));
+    o.push(...textOps(page, bi, 15, "REVIEWED", st.x + (st.w - bi.widthOfTextAtSize("REVIEWED", 15) * 0.82) / 2, Y(st.y + 21), STAMP_INK, 82));
     const line2 = `By ${who} at ${when}`; let fs = 10; while (bi.widthOfTextAtSize(line2, fs) > st.w - 12 && fs > 6) fs -= 0.25;
-    o.push(...textOps(page, bi, fs, line2, st.x + 6, Y(st.y + 36), STAMP_INK));
+    o.push(...textOps(page, bi, fs, line2, st.x + (st.w - bi.widthOfTextAtSize(line2, fs)) / 2, Y(st.y + 36), STAMP_INK));
     o.push(L.popGraphicsState());
     wrapExisting(page); page.pushOperators(...o);
   }
@@ -2506,6 +2540,8 @@ function printPdf(bytes) {
 // After the support documents are saved: print them, then offer the survey with the disclaimer.
 const askPrint = (id) => new Promise((resolve) => { const d = $(id), go = $(id + "Go"), skip = $(id + "Skip"); if (d.open) return resolve(false);
   const close = (v) => { d.close(); go.onclick = skip.onclick = null; resolve(v); }; go.onclick = () => close(true); skip.onclick = () => close(false); d.showModal(); });
+async function printSurveyNow() { if (await askPrint("printNext")) { try { await printPdf(await buildReviewedSurvey()); } catch (e) { console.error(e); showErr(e.message || String(e)); } } }
+async function printPkgNow() { if (await askPrint("printFirst")) { try { await printPdf(await BUILDERS.package()); } catch (e) { console.error(e); showErr(e.message || String(e)); } } }
 async function printFinal(pkg) {
   if (await askPrint("printFirst")) await printPdf(pkg);
   const d = $("printNext"); if (d.open) return;
@@ -2714,6 +2750,7 @@ async function init() {
     } catch (err) { console.error(err); $("fillInfo").textContent = "Something went wrong reading the files."; }
     finally { btn.disabled = false; S.filling = false; document.body.classList.remove("filling"); busyDone(); }
   });
+  $("btnPrintSurvey").addEventListener("click", printSurveyNow); $("btnPrintPkg").addEventListener("click", printPkgNow);
   $("ckAll").addEventListener("click", () => { CHECKS.forEach(c => S.check[c.id] = true); renderChecks(); refresh(); });
   $("ckNone").addEventListener("click", () => { CHECKS.forEach(c => S.check[c.id] = null); S.auto = {}; renderChecks(); refresh(); });
   $("btnFolder").addEventListener("click", () => pickFolder()); $("saveBarBtn").addEventListener("click", () => (S.folder && !S.folderOk) ? masterFromFolder(true) : pickFolder()); loadFolder();
