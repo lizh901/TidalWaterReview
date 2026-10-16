@@ -1243,6 +1243,7 @@ async function readFile(file) { return new Uint8Array(await file.arrayBuffer());
 async function fetchBytes(url) { if (window.MHW_EMBED && window.MHW_EMBED[url]) return unb64(window.MHW_EMBED[url]); const r = await fetch(url); if (!r.ok) throw new Error(`Couldn't load ${url}`); return new Uint8Array(await r.arrayBuffer()); }
 function pdfjsDoc(bytes) { return pdfjsLib.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise; }
 const MONTHS = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+const DATE_RE = /\b((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Za-z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}[\/-]\d{1,2}[\/-](?:\d{4}|\d{2}))\b/i;
 function toISO(str) {
   if (!str) return "";
   let m = str.match(/^([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})$/);
@@ -1446,6 +1447,7 @@ async function readSurvey(bytes) {
     const bits = [];
     for (const a of await page.getAnnotations()) { if (a.fieldType === "Sig") out0.signed = true; const s = (a.contentsObj && a.contentsObj.str) || a.contents; if (s) bits.push(s.trim()); }
     const tc = await page.getTextContent(); bits.push(tc.items.map(i => i.str).join(" "));
+    if (p === 1) for (const it of tc.items) { const dm = it.str.match(DATE_RE); if (dm && it.transform) { const score = it.transform[4] / vp.width - it.transform[5] / vp.height; if (!out0.corner || score > out0.corner.score) out0.corner = { score, date: dm[1] }; } }
     for (const b of bits) { if (b.length < 40) { const set = strings.get(b) || new Set(); set.add(p); strings.set(b, set); } }
     all += "\n" + bits.join("\n");
   }
@@ -1455,6 +1457,8 @@ async function readSurvey(bytes) {
   if (m) out.str = { section: titleCase(m[1].trim()), township: m[2], twpDir: (m[3] || "")[0] || "", range: m[4], rngDir: (m[5] || "")[0] || "" };
   m = U.match(/LOCATED\s+(?:BY\s+.{1,60}?\s+)?(?:ON\s+)?((?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/);
   if (m) out.located = toISO(m[1]);
+  if (!out.located) { m = U.match(new RegExp("(?:DATE OF (?:LAST )?FIELD ?WORK|(?:LAST )?FIELD ?WORK (?:COMPLETED|DATE)|FIELD DATE)\\s*(?:COMPLETED)?\\s*[:=]?\\s*(?:ON\\s*)?" + DATE_RE.source.slice(2, -2))); if (m) { out.located = toISO(m[1]); out.dateFrom = "date of last field work"; } }
+  if (!out.located && out0.corner) { out.located = toISO(out0.corner.date.toUpperCase()); out.dateFrom = "date in the title block corner"; }
   m = U.match(/MEAN HIGH WATER (?:LINE )?ELEVATION\s*(?:=|OF|IS)?\s*(-?\d+\.\d+)/); if (m) out.mhwElev = m[1];
   const dms = (lbl, hemi) => { const r = new RegExp(lbl + ":?\\s*(\\d{1,3})\\s*(?:%%D|°|DEG)?\\s*(\\d{1,2})['’]\\s*([\\d.]+)[\"”]?\\s*" + hemi); const q = U.match(r); return q ? (+q[1] + q[2] / 60 + q[3] / 3600) : null; };
   const la = dms("LATITUDE", "N"), lo = dms("LONGITUDE", "W"); if (la && lo) out.latlon = [la, lo];
@@ -1513,7 +1517,7 @@ function applySurvey(r) {
   const found = [];
   found.push(`${r.pages.length} sheet${r.pages.length > 1 ? "s" : ""}, ${r.pages.map(p => `${(Math.min(p.w, p.h) / 72).toFixed(0)}" x ${(Math.max(p.w, p.h) / 72).toFixed(0)}"`).join(", ")}`);
   if (r.mhwElev) found.push(`MHW elevation ${r.mhwElev} ft NAVD88 on the survey` + (S.approvalRead?.mhwElev ? `, ${S.approvalRead.mhwElev} ft on the approval` : ""));
-  if (r.located) found.push(`MHW located ${mdyyyy(r.located)}`);
+  if (r.located) found.push(r.dateFrom ? `Survey date ${mdyyyy(r.located)} (from the ${r.dateFrom}; check it)` : `MHW located ${mdyyyy(r.located)}`);
   if (!r.jobNo && !v("jobNo")) found.push("No job number found in the survey text. Type it from the title block.");
   if (r.str && S.approvalRead && (S.approvalRead.sec || S.approvalRead.twp)) found.push(`Approval lists Sec ${S.approvalRead.sec || "-"}, Twp ${S.approvalRead.twp || "-"}, Rge ${S.approvalRead.rge || "-"}`);
   S.surveyFound = found; renderFound(); applyAuto(); renderChecks();
@@ -2433,7 +2437,7 @@ function mailBody() {
 }
 function filingBody() {
   const who = v("reviewer");
-  return `Good afternoon,\n\nAttached is the Notice of Filing and the survey filed in the Mean High Water repository for the above referenced site. Please contact us if you have any questions.\n\nThank you\n\n${who}`;
+  return `Good ${new Date().getHours() < 12 ? "morning" : "afternoon"},\n\nAttached is the Notice of Filing and the survey filed in the Mean High Water repository for the above referenced site. Please contact us if you have any questions.\n\nThank you\n\n${who}`;
 }
 // A draft .eml (X-Unsent) opens in Outlook as a new, editable message with the attachments already on it.
 async function outlookEmail(btn) {
