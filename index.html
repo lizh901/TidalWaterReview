@@ -1279,6 +1279,7 @@ function normFirm(s) {
 const FREE_MAIL = /(gmail|yahoo|aol|hotmail|outlook|comcast|bellsouth|icloud|att)\./i;
 function matchFirm(business, email) {
   const firms = S.data.firms; const dom = (email || "").split("@")[1]?.toLowerCase();
+  if (email) { const f = firms.find(f => f.email && f.email.toLowerCase() === email.trim().toLowerCase()); if (f) return f; }
   if (dom && !FREE_MAIL.test(dom)) { const f = firms.find(f => (f.email || "").toLowerCase().endsWith("@" + dom)); if (f) return f; }
   const n = normFirm(business); if (!n) return null;
   let f = firms.find(f => normFirm(f.business) === n); if (f) return f;
@@ -1286,6 +1287,16 @@ function matchFirm(business, email) {
   const tk = new Set(n.split(" ")); let best = null, bs = 0;
   for (const g of firms) { const t2 = new Set(normFirm(g.business).split(" ")); const inter = [...tk].filter(x => t2.has(x)).length; const s = inter / new Set([...tk, ...t2]).size; if (s > bs) { bs = s; best = g; } }
   return bs >= 0.6 ? best : null;
+}
+// The firm named on the survey: its name in the title block, else its phone number or email address.
+function firmFromText(U) {
+  const firms = S.data.firms, n = " " + normFirm(U) + " ";
+  let f = firms.find(f => { const b = normFirm(f.business); return b.length >= 8 && n.includes(" " + b + " "); }); if (f) return f;
+  const digits = (x) => String(x || "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+  const phones = new Set((U.match(/\(?\d{3}\)?[\s.\-]*\d{3}[\s.\-]*\d{4}/g) || []).map(digits).filter(d => d.length === 10 && !d.startsWith("850245")));
+  const byPhone = firms.filter(f => phones.has(digits(f.phone))); if (byPhone.length === 1) return byPhone[0];
+  const mails = (U.match(/[\w.+-]+@[\w.-]+\.\w+/g) || []).map(m => m.toLowerCase());
+  return firms.find(f => f.email && mails.includes(f.email.toLowerCase())) || null;
 }
 function firmLabel(f) { return f.business + (f.city_state_zip ? ` · ${f.city_state_zip.replace(/,?\s*FL\s*\d{5}.*$/, "")}` : ""); }
 
@@ -1434,8 +1445,12 @@ async function readApproval(bytes) {
     const tc = await page.getTextContent();
     const items = tc.items.filter(i => i.str && i.str.trim()).map(i => ({ s: i.str.trim(), x: i.transform[4], y: i.transform[5], w: i.width }));
     if (!strict && items.some(i => /TRACKING FORM|Notice of Tidal Water Survey Filing|Guidelines|Requirements/i.test(i.s))) continue;
-    const title = strict ? items.find(i => /^Tidal Water Survey Procedural Approval$/i.test(i.s)) : items.find(i => /^(Tidal Water Survey )?Procedural Approval$/i.test(i.s)); if (!title) continue;
+    const tidal = items.some(i => /^Approximate Tidal Datum Elevations$/i.test(i.s));
+    const title = tidal ? items.find(i => /^Approximate Tidal Datum Elevations$/i.test(i.s)) : strict ? items.find(i => /^Tidal Water Survey Procedural Approval$/i.test(i.s)) : items.find(i => /^(Tidal Water Survey )?Procedural Approval$/i.test(i.s)); if (!title) continue;
     for (const a of await page.getAnnotations()) {
+      // On the Tidal Datums form the requestor isn't always the surveyor who signs, and the MHW value sits in the numbered field "2".
+      if (tidal && /^requestor name$/i.test(a.fieldName || "")) { if (a.fieldValue && String(a.fieldValue).trim()) out.requestor = String(a.fieldValue).replace(/,?\s*(PSM|PLS|LS)\b.*$/i, "").trim(); continue; }
+      if (tidal && a.fieldName === "2") { const mv = String(a.fieldValue || "").match(/-?\d+(\.\d+)?/); if (mv) out.mhwElev = mv[0]; continue; }
       const key = approvalKey(a.fieldName); if (key && a.fieldValue && typeof a.fieldValue === "string" && a.fieldValue.trim() && !out[key]) out[key] = a.fieldValue.trim();
     }
     if (Object.keys(out).length < 3) {
@@ -1448,7 +1463,7 @@ async function readApproval(bytes) {
         if (hit[1] === "addr1") { const next = items.find(i => /^_{10,}$/.test(i.s) && lab.y - i.y > 10 && lab.y - i.y < 30); if (next) { const v2 = items.filter(i => !isLabel(i) && i.y - next.y >= 1 && i.y - next.y <= 13 && i.x >= next.x - 2 && i.x < next.x + next.w); if (v2.length) out.addr2 = v2.map(v0 => v0.s).join(" "); } }
       }
     }
-    if (!Object.keys(out).length) for (const [key, dy, x0, x1] of APPROVAL_SLOTS) {
+    if (!tidal && !Object.keys(out).length) for (const [key, dy, x0, x1] of APPROVAL_SLOTS) {
       if (out[key]) continue; const line = title.y + dy;
       const hits = items.filter(i => i.y - line >= 1.5 && i.y - line <= 11 && i.x >= x0 && i.x < x1 && !/_{3,}/.test(i.s) && !/:$/.test(i.s)).sort((a, b) => a.x - b.x);
       if (hits.length) out[key] = hits.map(h => h.s).join(" ");
@@ -1553,6 +1568,8 @@ async function readSurvey(bytes) {
   m = U.match(/MEAN HIGH WATER (?:LINE )?ELEVATION\s*(?:=|OF|IS)?\s*(-?\d+\.\d+)/); if (m) out.mhwElev = m[1];
   const dms = (lbl, hemi) => { const r = new RegExp(lbl + ":?\\s*(\\d{1,3})\\s*(?:%%D|°|DEG)?\\s*(\\d{1,2})['’]\\s*([\\d.]+)[\"”]?\\s*" + hemi); const q = U.match(r); return q ? (+q[1] + q[2] / 60 + q[3] / 3600) : null; };
   const la = dms("LATITUDE", "N"), lo = dms("LONGITUDE", "W"); if (la && lo) out.latlon = [la, lo];
+  m = U.match(/\b(?:PSM|PLS|LS)\s*(?:NO\.?|NUMBER)?\s*[#:]?\s*(\d{4,5})\b/); if (m) out.psm = m[1];
+  out.firm = firmFromText(U);
   const jobRe = /^(?=.*\d)[A-Z0-9]{2,}(?:[-\/][A-Z0-9]+)+$/;
   let best = null;
   for (const [s, set] of strings) { const t = s.toUpperCase(); if (jobRe.test(t) && !/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}$/.test(t) && !/^\d+-\d+$/.test(t) && !/^\d+\/\d+(-\d+)?$/.test(t) && set.size === doc.numPages) { if (!best || s.length > best.length) best = s; } }
@@ -1597,6 +1614,7 @@ async function applyApproval(a) {
   const psm = v("psm");
   if (psm && S.psm[psm]) setVal("surveyor", S.psm[psm], "master list");
   else if (a.surveyor) setVal("surveyor", a.surveyor, "approval");
+  else if (a.requestor && !v("surveyor")) setVal("surveyor", a.requestor, "requestor");
   const firm = matchFirm(a.business, a.email);
   if (firm) applyFirm(firm, "firm on file");
   else {
@@ -1623,6 +1641,9 @@ function applySurvey(r) {
     setVal("section", r.str.section, "survey"); setVal("township", r.str.township, "survey"); setVal("range", r.str.range, "survey");
     $("twpDir").value = r.str.twpDir; $("rngDir").value = r.str.rngDir;
   }
+  if (r.psm && !v("psm")) setVal("psm", r.psm, "survey");
+  if (S.psm[v("psm")] && (!v("surveyor") || srcOf("surveyor") === "requestor")) setVal("surveyor", S.psm[v("psm")], "master list");
+  if (r.firm && !v("business")) applyFirm(r.firm, "firm on file");
   if (r.latlon && !v("lat")) { setVal("lat", r.latlon[0].toFixed(6), "survey, check LABINS"); setVal("lon", r.latlon[1].toFixed(6).padStart(10, "0"), "survey, check LABINS"); }
   const found = [];
   found.push(`${r.pages.length} sheet${r.pages.length > 1 ? "s" : ""}, ${r.pages.map(p => `${(Math.min(p.w, p.h) / 72).toFixed(0)}" x ${(Math.max(p.w, p.h) / 72).toFixed(0)}"`).join(", ")}`);
@@ -2675,7 +2696,7 @@ function wireDrop(dropId, inputId, handler) {
   drop.addEventListener("drop", async (e) => { e.preventDefault(); drop.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) await handler(f); else toast("Outlook didn't hand over a file. Drag the email or attachment to your desktop first, then drop that file here."); });
 }
 async function onApproval(bytes, name) {
-  clearFrom("approval", "firm on file");
+  clearFrom("approval", "firm on file", "requestor");
   S.files.approval = { bytes, name }; $("nameApproval").textContent = name; $("dropApproval").classList.add("has");
   try { const a = await readApproval(bytes); if (!Object.keys(a).length) toast("Couldn't find the procedural approval in that PDF. Fill the details by hand, or send the file to Claude in the project."); else { await applyApproval(a); applyLive(); toast("Filled the details from the procedural approval"); if (!S.example) mapAutoCenter(); } }
   catch (e) { console.error(e); toast("Couldn't read the approval. Fill the details by hand."); }
