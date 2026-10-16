@@ -835,6 +835,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
 		}
 	}
 
+.busy { position: fixed; top: 0; left: 0; right: 0; z-index: 2000; background: #0B5CAD; color: #fff; padding: 10px 16px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.busybar { height: 8px; background: rgba(255,255,255,.3); border-radius: 4px; margin-top: 6px; overflow: hidden; }
+.busybar span { display: block; height: 100%; width: 3%; background: #fff; transition: width .4s; }
+.busynote { font-weight: 600; padding: 8px 12px; border-radius: 6px; background: var(--chip, #E6ECF7); margin: 6px 0 10px; }
+body.filling .step:not(#s1) { opacity: .45; pointer-events: none; filter: grayscale(.4); transition: opacity .2s; }
+body.filling #s1 .drop { pointer-events: none; opacity: .6; }
+#btnFill.pulse { box-shadow: 0 0 0 3px #FFD400; }
 </style>
 
 <div class="wrap">
@@ -843,6 +850,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <p>Bureau of Survey and Mapping · Mean High Water repository · forms as of 10/2026 · <button class="linkish" id="btnExample" type="button">See a filled-in example</button></p>
   </header>
 
+  <div class="busy" id="busy" role="status" aria-live="polite" hidden><div id="busyTxt">Reading the survey…</div><div class="busybar"><span id="busyBar"></span></div></div>
   <div class="savebar off" id="saveBar"><span class="dot"></span><p id="saveBarText">Checking where files will save…</p><button class="small primary" type="button" id="saveBarBtn" hidden>Choose the MHW Section folder</button></div>
   <dialog class="help" id="printNext">
     <h3>Print the survey with the disclaimer?</h3>
@@ -889,7 +897,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
             <input type="file" id="fileApproval" accept="application/pdf,.pdf" aria-label="Procedural approval PDF">
           </div>
         </div>
-        <div class="row" style="margin-top:12px"><button class="primary" type="button" id="btnFill">Fill in the details</button><span class="small muted" id="fillInfo">The details also fill in as each file is added. This button reads all of them again from scratch.</span></div>
+        <div class="row" style="margin-top:12px"><button class="primary" type="button" id="btnFill">Fill in the details</button><span class="small muted" id="fillInfo">Add your files first, then press this button. The page greys out while it reads them.</span></div>
         <div class="found" id="found" hidden></div>
       </section>
 
@@ -943,6 +951,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
       <section class="step" id="s3">
         <h2><span class="n">3</span>Office review checklist</h2>
+        <p class="busynote" id="checksBusy" hidden>⏳ Still reading the survey. These items will tick themselves when it's done.</p>
         <p class="lede">The app checks what it can read on the survey and ticks those items, with what it found underneath. Check the rest yourself. Any item left unticked goes in the corrections email in step 4.</p>
         <div class="row space" style="margin-bottom:8px">
           <span class="result" id="ckResult"></span>
@@ -1448,6 +1457,10 @@ function loadOcr() {
   if (!/^https?:$/.test(location.protocol)) return Promise.reject(new Error("text recognition needs the website"));
   return new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = new URL("ocr/tesseract.min.js", location.href).href; sc.onload = () => res(window.Tesseract); sc.onerror = () => rej(new Error("couldn't load text recognition")); document.head.appendChild(sc); });
 }
+function busy(msg, frac) { const b = $("busy"); if (!b) return; b.hidden = false; $("busyTxt").textContent = msg; $("busyBar").style.width = Math.max(3, Math.round((frac || 0) * 100)) + "%"; $("checksBusy").hidden = false; }
+// Wait (up to 40 s) for the USGS/BLM lookups to come back, so the fields are filled when the page un-greys.
+async function waitLookups() { const t = Date.now(); await new Promise(r => setTimeout(r, 1500)); while (S.live && S.live.loading && Date.now() - t < 40000) await new Promise(r => setTimeout(r, 400)); }
+function busyDone() { const b = $("busy"); if (b) b.hidden = true; const c = $("checksBusy"); if (c) c.hidden = true; }
 async function ocrSurvey(doc, say) {
   const T = await loadOcr(); const base = new URL("ocr/", location.href).href;
   const worker = await T.createWorker("eng", 1, { workerPath: base + "worker.min.js", corePath: base, langPath: base, gzip: true });
@@ -1464,6 +1477,7 @@ async function ocrSurvey(doc, say) {
       jobs.push("turn");
       for (let i = 0; i < jobs.length; i++) {
         say(`Reading the lettering on the survey (sheet ${p} of ${n}, part ${i + 1} of ${jobs.length})…`);
+        busy(`Reading the survey, please wait… (sheet ${p} of ${n}, part ${i + 1} of ${jobs.length})`, ((p - 1) * jobs.length + i) / (n * jobs.length));
         let src = document.createElement("canvas"), ox = 0, oy = 0;
         if (jobs[i] === "turn") { src.width = c.height; src.height = c.width; const h = src.getContext("2d"); h.translate(src.width / 2, src.height / 2); h.rotate(Math.PI / 2); h.drawImage(c, -c.width / 2, -c.height / 2); }
         else { const [k, r] = jobs[i]; const tw = c.width / cols, th = c.height / rows; ox = Math.max(0, Math.round(k * tw - tw * ov)); oy = Math.max(0, Math.round(r * th - th * ov));
@@ -1472,6 +1486,13 @@ async function ocrSurvey(doc, say) {
         text += "\n" + data.text;
         if (p === 1 && jobs[i] !== "turn") for (const w of data.lines || []) { const dm = w.text.match(DATE_RE); const dw = dm && (w.words || []).find(x => /\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2}|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i.test(x.text)) || w; const fx = (dw.bbox.x0 + ox) / c.width, fy = (w.bbox.y1 + oy) / c.height; if (dm && recentDate(dm[1]) && fx >= 0.75 && fy >= 0.6) { const score = fx + fy; if (!corner || score > corner.score) corner = { score, date: dm[1] }; } }
       }
+      // Big spaced-out labels (waterbody names like "J U P I T E R  S O U N D") are only seen by the sparse-text mode, on a smaller copy of the sheet.
+      say(`Reading the large labels on the survey (sheet ${p} of ${n})…`); busy(`Reading the survey, please wait… (large labels, sheet ${p} of ${n})`, (p * jobs.length - 0.5) / (n * jobs.length));
+      const k = 1600 / Math.max(c.width, c.height), sm = document.createElement("canvas"); sm.width = Math.round(c.width * k); sm.height = Math.round(c.height * k); sm.getContext("2d").drawImage(c, 0, 0, sm.width, sm.height);
+      const st = document.createElement("canvas"); st.width = sm.height; st.height = sm.width; const sg = st.getContext("2d"); sg.translate(st.width / 2, st.height / 2); sg.rotate(Math.PI / 2); sg.drawImage(sm, -sm.width / 2, -sm.height / 2);
+      await worker.setParameters({ tessedit_pageseg_mode: "11" });
+      for (const img of [sm, st]) text += "\n" + (await worker.recognize(img)).data.text;
+      await worker.setParameters({ tessedit_pageseg_mode: "3" });
     }
   } finally { await worker.terminate(); }
   return { text, corner };
@@ -1492,7 +1513,7 @@ async function readSurvey(bytes) {
   if (all.replace(/\s+/g, "").length < 400) {
     const key = bytes.length + ":" + bytes[bytes.length >> 1] + ":" + bytes[bytes.length >> 2];
     try {
-      const o = (S.ocrCache && S.ocrCache.key === key) ? S.ocrCache.o : await ocrSurvey(doc, (msg) => { const el = $("found"); if (el) { el.hidden = false; el.innerHTML = `<strong>${escapeHtml(msg)}</strong><div class="small muted">This survey's lettering is drawn as lines, so it's being read from the picture. It can take a minute.</div>`; } });
+      const o = (S.ocrCache && S.ocrCache.key === key) ? S.ocrCache.o : await ocrSurvey(doc, (msg) => { const el = $("found"); if (el) { el.hidden = false; el.innerHTML = `<strong>${escapeHtml(msg)}</strong><div class="small muted">The words on this survey aren't saved as text inside the PDF, so they're being read from the picture. It can take a minute or two.</div>`; } });
       S.ocrCache = { key, o };
       all += "\n" + o.text; out0.ocr = true; out0.noText = false; if (o.corner) out0.corner = o.corner;
     } catch (e) { out0.ocrError = e.message; }
@@ -1572,8 +1593,8 @@ function applySurvey(r) {
   found.push(`${r.pages.length} sheet${r.pages.length > 1 ? "s" : ""}, ${r.pages.map(p => `${(Math.min(p.w, p.h) / 72).toFixed(0)}" x ${(Math.max(p.w, p.h) / 72).toFixed(0)}"`).join(", ")}`);
   if (r.mhwElev) found.push(`MHW elevation ${r.mhwElev} ft NAVD88 on the survey` + (S.approvalRead?.mhwElev ? `, ${S.approvalRead.mhwElev} ft on the approval` : ""));
   if (r.located) found.push(r.dateFrom ? `Survey date ${mdyyyy(r.located)} (from the ${r.dateFrom}; check it)` : `MHW located ${mdyyyy(r.located)}`);
-  if (r.ocr) found.push("The lettering on this survey is drawn as lines, so it was read from the picture. Double-check anything filled in from it.");
-  if (r.noText) found.push("This survey PDF has almost no readable text (it was likely scanned or plotted as drawing lines), so most details can't be read from it. They'll come from the map, the approval and the email where possible; type anything still blank.");
+  if (r.ocr) found.push("The words on this survey aren't saved as text inside the PDF, so they were read from the picture. Double-check anything filled in from it.");
+  if (r.noText) found.push("This survey PDF has almost no readable text (the words aren't saved as text inside the PDF), so most details can't be read from it. They'll come from the map, the approval and the email where possible; type anything still blank.");
   if (!r.jobNo && !v("jobNo")) found.push("No job number found in the survey text. Type it from the title block.");
   if (r.str && S.approvalRead && (S.approvalRead.sec || S.approvalRead.twp)) found.push(`Approval lists Sec ${S.approvalRead.sec || "-"}, Twp ${S.approvalRead.twp || "-"}, Rge ${S.approvalRead.rge || "-"}`);
   S.surveyFound = found; renderFound(); applyLive(); applyAuto(); renderChecks();
@@ -1817,14 +1838,26 @@ function autoChecks() {
   if (T) {
     let m;
     if ((m = snip(/(SITE BENCH ?MARK|BENCH ?MARK SET|SET (A |AN )?[^.]{0,30}BENCH ?MARK|TBM SET)[^.]{0,60}/, T))) say("3a", true, `Found: ${m}`);
+    else {
+      // A benchmark stamped with the surveying firm's own LB number was set by the firm.
+      const firmLB = (T.match(/(?:SURVEY BUSINESS (?:NO\.?|NUMBER)|BUSINESS (?:NO\.?|NUMBER)|\bL\.?B\.?\s*(?:NO\.?|#)?)\s*:?\s*(\d{3,5})/g) || []).map(x => x.match(/(\d{3,5})$/)[1]);
+      const bm = T.match(/BENCH ?MARK(?! USED)[\s\S]{0,90}?\(?L\.?B\.?\s*#?\s*(\d{3,5})/);
+      const counts = {}; firmLB.forEach(n => counts[n] = (counts[n] || 0) + 1);
+      const site = T.match(/BENCH ?MARK(?! USED)[^A-Z0-9]{0,8}(?:[\s\S]{0,30}?)\b(?:EL\.?|ELEV\.?|ELEVATION)\s*[=:]?\s*\d+\.?\d*[\s\S]{0,60}?\bSET\b/);
+      if (bm && counts[bm[1]] >= 2) say("3a", true, `Found: a site benchmark marked with the firm's own LB ${bm[1]} (${snip(/BENCH ?MARK(?! USED)[^.]{0,60}/, T)})`);
+      else if (site) say("3a", true, `Found a site benchmark set by the surveyor: ${site[0].slice(0, 90)}`);
+    }
     if ((m = snip(/(BENCH ?MARK|\bTBM\b|\bB\.?M\.?\b)[^.]{0,80}/, T))) say("3b", true, `Found: ${m}`);
     // Prefer a benchmark elevation; a bare "ELEVATION ... NAVD" can be the MHW note instead.
     if ((m = snip(/(BENCH ?MARK|\bTBM\b|\bB\.?M\.?\b)[\s\S]{0,80}?\d+\.\d+\s*['’]?\s*(?:FEET|FT\.?)?\s*\(?\s*NAV[DO0]\s*\(?(19)?88\)?/, T) || snip(/(?<!WATER (LINE )?)(ELEVATION|\bEL)[^.]{0,60}?\d+\.\d+\s*'?\s*\(?\s*NAVD\s*\(?(19)?88\)?/, T))) say("3c", true, `Found: ${m}`);
     if ((m = snip(/(NAVD\s*\(?(19)?88|NORTH AMERICAN VERTICAL DATUM)[^.]{0,80}/, T)) && /BENCH ?MARK|CONTROL|\bTBM\b/.test(T)) say("3d", true, `Found: ${m}`);
-    if ((m = snip(/[NS]\s?\d{1,2}\s?°\s?\d{1,2}\s?['’]\s?\d{1,2}(\.\d+)?\s?["”]?\s?[EW]|STATION[^.]{0,20}OFFSET/, T))) say("4a", true, `Found: ${m}`);
+    if ((m = snip(/[NS]\s?\d{1,2}\s?°\s?\d{1,2}\s?['’]\s?\d{1,2}(\.\d+)?\s?["”]?\s?[EW]|STATION[^.]{0,20}OFFSET/, T))) say("4a", true, `Found bearings such as ${m}${/MEAN HIGH WATER (LINE )?DATA|LINE TABLE|BEARING\s+DISTANCE/.test(T) ? " in the mean high water line table" : ""}. Check they tie to a monument.`);
     if ((m = snip(/(REAL[- ]TIME KINEMATIC|\bRTK\b|\bGNSS\b|\bGPS\b|TOTAL STATION|(LOCATED|ESTABLISHED) (BY|UTILIZING|USING))[^.]{0,60}/, T))) say("4b", true, `Found: ${m}`);
-    if ((m = snip(/MEAN HIGH WATER[\s\S]{0,60}?ELEVATION[\s\S]{0,30}?\d*\.\d+[^.]{0,40}/, T)) && /LOCATED/.test(T)) say("4c", true, `Found: ${m}${sv.located ? `, located ${mdyyyy(sv.located)}` : ""}`);
-    const wb = v("waterbody").toUpperCase(); if (wb) say("4d", T.includes(wb) ? true : null, T.includes(wb) ? `Found "${v("waterbody")}" on the survey.` : `"${v("waterbody")}" wasn't found in the survey text.`);
+    if ((m = snip(/MEAN HIGH WATER[\s\S]{0,60}?ELEVATION[\s\S]{0,30}?\d*\.\d+[^.]{0,40}/, T))) {
+      if (/AS LOCATED|LOCATED (ON|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|JAN|FEB|MAR|APR|\d)/.test(T)) say("4c", true, `Found: ${m}${sv.located ? `, located ${mdyyyy(sv.located)}` : ""}`);
+      else say("4c", null, `Found: ${m}. The "as located on" label along the line couldn't be read (it may be slanted), so check it by eye.`);
+    }
+    const wb = v("waterbody").toUpperCase(); const wbHit = wb && (T.includes(wb) || T.replace(/[^A-Z]/g, "").includes(wb.replace(/[^A-Z]/g, ""))); if (wb) say("4d", wbHit ? true : null, wbHit ? `Found "${v("waterbody")}" on the survey.` : `"${v("waterbody")}" wasn't found in the survey text.`);
     if ((m = snip(/PROCEDURAL APPROVAL[^.]{0,60}/, T))) say("5", true, `Found: ${m}`);
     const vic = /(VICINITY|LOCATION|LOCATOR|LOCUS|SITE|KEY|AREA) (MAP|SKETCH|PLAN)|\bVICINITY\b/.test(T);
     if (vic && sv.str) { const dirs = sv.str.twpDir || /N\/A/.test(sv.str.township); say("6", dirs ? true : null, `Found a vicinity sketch with Section ${sv.str.section}, Township ${strDir(sv.str.township, sv.str.twpDir)}, Range ${strDir(sv.str.range, sv.str.rngDir)}${dirs ? "" : ". Township and range directions weren't found"}.`); }
@@ -1859,7 +1892,8 @@ function applyAuto() {
 async function loadSurvey(bytes, name) {
   clearFrom("survey");
   S.files.survey = { bytes, name }; $("nameSurvey").textContent = name; $("dropSurvey").classList.add("has");
-  const r = await readSurvey(bytes); S.survey = r;
+  busy("Reading the survey, please wait…", 0.02);
+  let r; try { r = await readSurvey(bytes); } finally { if (!S.filling) busyDone(); } S.survey = r;
   S.placements = r.pages.map(() => null); S.sheet = 0;
   applySurvey(r); renderTabs(); await renderStage(true); refresh(); if (!S.example) mapAutoCenter();
 }
@@ -2650,17 +2684,19 @@ async function init() {
   $("btnFill").addEventListener("click", async (e) => {
     const { mail, approval, survey } = S.files; const btn = e.currentTarget;
     if (!mail && !approval && !survey) { toast("Add the request email, the survey or the procedural approval first."); return; }
-    btn.disabled = true; $("fillInfo").textContent = "Reading the files…";
+    btn.disabled = true; btn.classList.remove("pulse"); $("fillInfo").textContent = "Reading the files…";
+    S.filling = true; document.body.classList.add("filling"); busy("Reading your files, please wait…", 0.02);
     if (S.folder && canPickFolder()) await masterFromFolder(true);
     try {
       const keepNo = S.nofFiled ? v("filingNo") : ""; resetAll(); if (keepNo) { setVal("filingNo", keepNo, "master list"); S.nofFiled = true; }
-      if (mail) await onEmail(mail.bytes, mail.name);
-      if (approval && S.files.approval?.bytes !== approval.bytes) await onApproval(approval.bytes, approval.name);
-      if (survey && S.files.survey?.bytes !== survey.bytes) await loadSurvey(survey.bytes, survey.name);
+      if (mail) { busy("Reading the request email, please wait…", 0.03); await onEmail(mail.bytes, mail.name); }
+      if (approval && !(S.files.approval && S.files.approval.name === approval.name && S.files.approval.bytes.length === approval.bytes.length)) { busy("Reading the procedural approval, please wait…", 0.05); await onApproval(approval.bytes, approval.name); }
+      if (survey && !(S.files.survey && S.files.survey.name === survey.name && S.files.survey.bytes.length === survey.bytes.length)) await loadSurvey(survey.bytes, survey.name);
+      busy("Checking the map records, please wait…", 0.97); await waitLookups();
       const n = [...document.querySelectorAll(".src[data-src]")].filter(t => !t.hidden).length;
       $("fillInfo").textContent = `Filled ${n} fields. Check anything left blank.`; toast(`Filled ${n} fields from your files`);
     } catch (err) { console.error(err); $("fillInfo").textContent = "Something went wrong reading the files."; }
-    finally { btn.disabled = false; }
+    finally { btn.disabled = false; S.filling = false; document.body.classList.remove("filling"); busyDone(); }
   });
   $("ckAll").addEventListener("click", () => { CHECKS.forEach(c => S.check[c.id] = true); renderChecks(); refresh(); });
   $("ckNone").addEventListener("click", () => { CHECKS.forEach(c => S.check[c.id] = null); S.auto = {}; renderChecks(); refresh(); });
@@ -2673,9 +2709,12 @@ async function init() {
   setBlockWide(parseFloat(storeGet("mhw.blockWide")) || 1);
   $("btnAutoPlace").addEventListener("click", () => { if (!S.stageCanvas) return; const p = findSpace(S.stageCanvas, S.stageScale); setPlacement(p); });
   $("sameSpot").addEventListener("change", () => { if ($("sameSpot").checked && S.placements.length) { const p = S.placements[S.sheet]; S.placements = S.placements.map(() => ({ ...p })); } });
-  wireDrop("dropSurvey", "fileSurvey", async (f) => { if (S.example) resetAll(); try { await loadSurvey(await readFile(f), f.name); } catch (e) { console.error(e); toast("That PDF couldn't be opened."); } });
-  wireDrop("dropMail", "fileMail", async (f) => { if (S.example) resetAll(); return onEmail(await readFile(f), f.name); });
-  wireDrop("dropApproval", "fileApproval", async (f) => { if (S.example) resetAll(); return onApproval(await readFile(f), f.name); });
+  // Files wait here until "Fill in the details" is pressed, so nothing reads in the background unnoticed.
+  const queueFile = async (key, f, drop, label) => { if (S.example) resetAll(); S.files[key] = { bytes: await readFile(f), name: f.name }; $(label).textContent = f.name; $(drop).classList.add("has");
+    $("fillInfo").textContent = "File added. Press Fill in the details when all your files are in."; $("btnFill").classList.add("pulse"); };
+  wireDrop("dropSurvey", "fileSurvey", (f) => queueFile("survey", f, "dropSurvey", "nameSurvey"));
+  wireDrop("dropMail", "fileMail", (f) => queueFile("mail", f, "dropMail", "nameMail"));
+  wireDrop("dropApproval", "fileApproval", (f) => queueFile("approval", f, "dropApproval", "nameApproval"));
   wireDrop("dropEmail", "fileEmail", async (f) => { S.files.email = { bytes: await readFile(f), name: f.name }; $("nameEmail").textContent = f.name; $("dropEmail").classList.add("has"); refresh(); });
   wireDrop("dropSigned", "fileSigned", async (f) => { S.files.signed = { bytes: await readFile(f), name: f.name }; $("nameSigned").textContent = f.name; $("dropSigned").classList.add("has"); refresh(); });
   wireDrop("dropId", "fileId", async (f) => { S.idFile = await readFile(f); if (S.idFile[0] === 0x50 && S.idFile[1] === 0x4b) { const u = unzipStored(S.idFile); if (!u) { showErr("Unzip the backup first, then choose the .pfx file inside."); return; } S.idFile = u; } S.id = null; $("nameId").textContent = f.name; $("dropId").classList.add("has"); $("btnSign").disabled = true;
