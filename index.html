@@ -903,6 +903,11 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
             <span class="fname" id="nameApproval">Drop the PDF here or click to choose</span>
             <input type="file" id="fileApproval" accept="application/pdf,.pdf" aria-label="Procedural approval PDF">
           </div>
+          <div class="drop" id="dropApproval2">
+            <strong>Second procedural approval (PDF, only when there are two waterbodies)</strong>
+            <span class="fname" id="nameApproval2">Drop the PDF here or click to choose</span>
+            <input type="file" id="fileApproval2" accept="application/pdf,.pdf" aria-label="Second procedural approval PDF">
+          </div>
         </div>
         <div class="row" style="margin-top:12px"><button class="primary" type="button" id="btnFill">Fill in the details</button><span class="small muted" id="fillInfo">Add your files first, then press this button. The page greys out while it reads them.</span></div>
         <div class="found" id="found" hidden></div>
@@ -918,6 +923,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
           <div class="f"><label for="surveyDate">Survey date (MHW located) <span class="src" data-src="surveyDate" hidden></span></label><input type="date" id="surveyDate"></div>
           <div class="f half"><label for="project">Project / address <span class="src" data-src="project" hidden></span></label><input type="text" id="project"></div>
           <div class="f half"><label for="waterbody">Waterbody <span class="src" data-src="waterbody" hidden></span></label><input type="text" id="waterbody"></div>
+          <div class="f half"><label for="waterbody2">Second waterbody (if any) <span class="src" data-src="waterbody2" hidden></span></label><input type="text" id="waterbody2"></div>
           <div class="f"><label for="section">Section <span class="src" data-src="section" hidden></span></label><input type="text" id="section" placeholder="e.g. 26, or a grant name"></div>
           <div class="f"><label for="township">Township <span class="src" data-src="township" hidden></span></label><div class="inline"><input type="text" id="township" placeholder="38 or N/A"><select id="twpDir" aria-label="Township direction"><option value=""></option><option>S</option><option>N</option></select></div></div>
           <div class="f"><label for="range">Range <span class="src" data-src="range" hidden></span></label><div class="inline"><input type="text" id="range" placeholder="18 or N/A"><select id="rngDir" aria-label="Range direction"><option value=""></option><option>E</option><option>W</option></select></div></div>
@@ -1213,7 +1219,7 @@ const CHECKS = [
   { id: "9a", text: "Submit the signed and sealed survey in Portable Document File (pdf) format.", sub: true },
   { id: "9b", text: "Include the Tidal Water Survey Procedural Approval in Portable Document File (pdf) format.", sub: true },
 ];
-const FIELD_IDS = ["filingNo","county","jobNo","surveyDate","project","waterbody","section","township","twpDir","range","rngDir","quad","lat","lon","firm","surveyor","psm","business","street","cityStateZip","phone","email"];
+const FIELD_IDS = ["filingNo","county","jobNo","surveyDate","project","waterbody","waterbody2","section","township","twpDir","range","rngDir","quad","lat","lon","firm","surveyor","psm","business","street","cityStateZip","phone","email"];
 const EXAMPLE = {
   filingNo: "9681", lat: "26.996603", lon: "080.089297", receivedDate: "2026-06-10", reviewDate: "2026-06-25", reviewTime: "13:23",
   reviewer: "Liz Hastings", emailSubject: "475 S. Beach Rd, Hobe Sound, FL", dbEntryDate: "2026-06-25", filingNoticeDate: "2026-06-25"
@@ -1233,6 +1239,8 @@ const S = {
 /* ---------- small utils ---------- */
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 2600); }
 function v(id) { return ($(id).value || "").trim(); }
+// Both waterbodies when a request has two (one procedural approval and MHW line for each).
+function wbAll() { return [v("waterbody"), v("waterbody2")].filter(Boolean).join(" and "); }
 function setVal(id, val, src) {
   if (val == null || val === "") return;
   const el = $(id); el.value = val; el.classList.toggle("filled", !!src);
@@ -1376,7 +1384,7 @@ async function readEmail(bytes, name) {
   return readEml(bytes);
 }
 async function isApproval(bytes) {
-  try { const d = await pdfjsDoc(bytes); const t = (await (await d.getPage(1)).getTextContent()).items.map(i => i.str).join(" "); return /Procedural\s+Approval/i.test(t) && d.numPages <= 4; } catch (e) { return false; }
+  try { const d = await pdfjsDoc(bytes); const t = (await (await d.getPage(1)).getTextContent()).items.map(i => i.str).join(" "); return /Procedural\s+Approval|Approximate Tidal Datum Elevations/i.test(t) && d.numPages <= 4; } catch (e) { return false; }
 }
 function isoOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 async function onEmail(bytes, name) {
@@ -1388,11 +1396,12 @@ async function onEmail(bytes, name) {
   if (m.sent) setVal("receivedDate", isoOf(m.sent), "email");
   S.emailFrom = m.from;
   const pdfs = m.attachments.filter(a => /\.pdf$/i.test(a.name) || (a.bytes[0] === 0x25 && a.bytes[1] === 0x50));
-  let approval = null; const others = [];
-  for (const a of pdfs) { if (!approval && await isApproval(a.bytes)) approval = a; else others.push(a); }
+  let approval = null, approval2 = null; const others = [];
+  for (const a of pdfs) { if ((!approval || !approval2) && await isApproval(a.bytes)) { if (!approval) approval = a; else approval2 = a; } else others.push(a); }
   const survey = others.sort((a, b) => b.bytes.length - a.bytes.length)[0];
   const got = [];
   if (approval) { await onApproval(approval.bytes, approval.name); got.push("procedural approval"); }
+  if (approval2) { await onApproval2(approval2.bytes, approval2.name); got.push("second procedural approval"); }
   if (survey) { await loadSurvey(survey.bytes, survey.name); got.push("survey"); }
   if (m.body) applyEmailBody(m.body);
   if (!v("email") && m.from && !/floridadep/i.test(m.from)) { const f = matchFirm("", m.from); if (f) { applyFirm(f, "firm on file"); } }
@@ -1566,6 +1575,7 @@ async function readSurvey(bytes) {
   }
   if (!out.located && out0.corner) { out.located = toISO(out0.corner.date.toUpperCase()); out.dateFrom = "date in the title block corner"; }
   m = U.match(/MEAN HIGH WATER (?:LINE )?ELEVATION\s*(?:=|OF|IS)?\s*(-?\d+\.\d+)/); if (m) out.mhwElev = m[1];
+  out.mhwElevs = [...new Set([...U.matchAll(/MEAN HIGH WATER (?:LINE )?ELEVATION\s*(?:=|OF|IS)?\s*(-?\d+\.\d+)/g)].map(x => x[1]))];
   const dms = (lbl, hemi) => { const r = new RegExp(lbl + ":?\\s*(\\d{1,3})\\s*(?:%%D|°|DEG)?\\s*(\\d{1,2})['’]\\s*([\\d.]+)[\"”]?\\s*" + hemi); const q = U.match(r); return q ? (+q[1] + q[2] / 60 + q[3] / 3600) : null; };
   const la = dms("LATITUDE", "N"), lo = dms("LONGITUDE", "W"); if (la && lo) out.latlon = [la, lo];
   m = U.match(/\b(?:PSM|PLS|LS)\s*(?:NO\.?|NUMBER)?\s*[#:]?\s*(\d{4,5})\b/); if (m) out.psm = m[1];
@@ -1647,7 +1657,9 @@ function applySurvey(r) {
   if (r.latlon && !v("lat")) { setVal("lat", r.latlon[0].toFixed(6), "survey, check LABINS"); setVal("lon", r.latlon[1].toFixed(6).padStart(10, "0"), "survey, check LABINS"); }
   const found = [];
   found.push(`${r.pages.length} sheet${r.pages.length > 1 ? "s" : ""}, ${r.pages.map(p => `${(Math.min(p.w, p.h) / 72).toFixed(0)}" x ${(Math.max(p.w, p.h) / 72).toFixed(0)}"`).join(", ")}`);
-  if (r.mhwElev) found.push(`MHW elevation ${r.mhwElev} ft NAVD88 on the survey` + (S.approvalRead?.mhwElev ? `, ${S.approvalRead.mhwElev} ft on the approval` : ""));
+  const ev = (r.mhwElevs && r.mhwElevs.length ? r.mhwElevs : r.mhwElev ? [r.mhwElev] : []);
+  const ap = [S.approvalRead?.mhwElev, S.approvalRead2?.mhwElev].filter(Boolean);
+  if (ev.length) found.push(`MHW elevation${ev.length > 1 ? "s" : ""} ${ev.join(" and ")} ft NAVD88 on the survey` + (ap.length ? `, ${ap.join(" and ")} ft on the approval${ap.length > 1 ? "s" : ""}` : ""));
   if (r.located) found.push(r.dateFrom ? `Survey date ${mdyyyy(r.located)} (from the ${r.dateFrom}; check it)` : `MHW located ${mdyyyy(r.located)}`);
   if (r.ocr) found.push("The words on this survey aren't saved as text inside the PDF, so they were read from the picture. Double-check anything filled in from it.");
   if (r.noText) found.push("This survey PDF has almost no readable text (the words aren't saved as text inside the PDF), so most details can't be read from it. They'll come from the map, the approval and the email where possible; type anything still blank.");
@@ -1934,7 +1946,8 @@ function autoChecks() {
       if (/AS LOCATED|LOCATED (ON|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|JAN|FEB|MAR|APR|\d)/.test(T)) say("4c", true, `Found: ${m}${sv.located ? `, located ${mdyyyy(sv.located)}` : ""}`);
       else say("4c", null, `Found: ${m}. The "as located on" label along the line couldn't be read (it may be slanted), so check it by eye.`);
     }
-    const wb = v("waterbody").toUpperCase(); const wbHit = wb && (T.includes(wb) || T.replace(/[^A-Z]/g, "").includes(wb.replace(/[^A-Z]/g, ""))); if (wb) say("4d", wbHit ? true : null, wbHit ? `Found "${v("waterbody")}" on the survey.` : `"${v("waterbody")}" wasn't found in the survey text.`);
+    const wbs = [v("waterbody"), v("waterbody2")].filter(Boolean), onSv = (w) => { const u = w.toUpperCase(); return T.includes(u) || T.replace(/[^A-Z]/g, "").includes(u.replace(/[^A-Z]/g, "")); };
+    const miss = wbs.filter(w => !onSv(w)); if (wbs.length) say("4d", miss.length ? null : true, miss.length ? `${miss.map(w => `"${w}"`).join(" and ")} wasn't found in the survey text.` : `Found ${wbs.map(w => `"${w}"`).join(" and ")} on the survey.`);
     if ((m = snip(/PROCEDURAL APPROVAL[^.]{0,60}/, T))) say("5", true, `Found: ${m}`);
     const vic = /(VICINITY|LOCATION|LOCATOR|LOCUS|SITE|KEY|AREA) (MAP|SKETCH|PLAN)|\bVICINITY\b/.test(T);
     if (vic && sv.str) { const dirs = sv.str.twpDir || /N\/A/.test(sv.str.township); say("6", dirs ? true : null, `Found a vicinity sketch with Section ${sv.str.section}, Township ${strDir(sv.str.township, sv.str.twpDir)}, Range ${strDir(sv.str.range, sv.str.rngDir)}${dirs ? "" : ". Township and range directions weren't found"}.`); }
@@ -2204,7 +2217,7 @@ async function buildNof() {
   const doc = await fillForm("nof.pdf", (form, F) => {
     setText(form, "mapping public repository  Mean High Water Survey File Number", v("filingNo"), F.bold);
     const t = (n, val) => setText(form, n, val, F.obl);
-    t("Survey Date", mdyyyy(v("surveyDate"))); t("County", v("county")); t("Waterbody", v("waterbody")); t("Job Number", v("jobNo"));
+    t("Survey Date", mdyyyy(v("surveyDate"))); t("County", v("county")); t("Waterbody", wbAll()); t("Job Number", v("jobNo"));
     t("Project", v("project")); t("Section", v("section")); t("Township", strDir(v("township"), v("twpDir"))); t("Range", strDir(v("range"), v("rngDir")));
     t("USGS 75 Minute Quad Map Name", v("quad")); t("Surveyors Name", v("surveyor")); t("PSM No", v("psm"));
     t("Business Name 1", v("business")); t("Business Name 2", v("street")); t("Business Name 3", v("cityStateZip"));
@@ -2220,7 +2233,7 @@ async function trackingDoc() {
     t("Review Comments", mdyy(v("commentsDate"))); t("Second Submittal", mdyy(v("secondDate")));
     t("Database Entry Date", accepted() ? mdyy(v("dbEntryDate")) : ""); t("Filing Notice", accepted() ? mdyy(v("filingNoticeDate")) : "");
     t("Section", v("section")); t("Township", strDir(v("township"), v("twpDir"))); t("Range", strDir(v("range"), v("rngDir")));
-    t("Quadrangle", v("quad")); t("Water Body", v("waterbody")); t("Location", v("project")); t("Comments", v("comments"));
+    t("Quadrangle", v("quad")); t("Water Body", wbAll()); t("Location", v("project")); t("Comments", v("comments"));
     setCheck(form, "Check Box1", !!S.files.approval || S.check["9b"] === true); setCheck(form, "Check Box2", !todo().length); setCheck(form, "Check Box3", !!S.files.survey || S.check["9a"] === true);
     setCheck(form, "Check Box4", accepted()); setCheck(form, "Check Box5", failed().length > 0);
   });
@@ -2246,6 +2259,7 @@ async function buildPackage() {
   else if (S.signedNof) parts.push(["Signed Notice of Filing", await flatCopy(S.signedNof)]);
   else parts.push(["Notice of Filing (unsigned)", await flatCopy(await buildNof())]);
   if (S.files.approval) parts.push(["Procedural approval", await flatCopy(S.files.approval.bytes)]);
+  if (S.files.approval2) parts.push(["Second procedural approval", await flatCopy(S.files.approval2.bytes)]);
   parts.push(["Checklist", await flatCopy(await checklistDoc())]);
   // Letter/legal pages only: survey sheets never belong in the support package, even if one rides along in a PDF.
   for (const [, d] of parts) { const keep = d.getPageIndices().filter(i => { const { width, height } = d.getPage(i).getSize(); return Math.max(width, height) <= 17 * 72 + 2; });
@@ -2652,7 +2666,7 @@ async function outlookEmail(btn) {
 function mailSubject() { return "RE: " + (v("emailSubject") || "(original subject)"); }
 function masterRow() {
   const twpNA = /^n\/?a$/i.test(v("township")), rngNA = /^n\/?a$/i.test(v("range"));
-  const cols = [v("filingNo"), v("surveyor"), mdyyyy(v("surveyDate")), v("county"), [v("jobNo"), v("project")].filter(Boolean).join(" "), v("psm"), latlonText(), v("waterbody"), v("section"),
+  const cols = [v("filingNo"), v("surveyor"), mdyyyy(v("surveyDate")), v("county"), [v("jobNo"), v("project")].filter(Boolean).join(" "), v("psm"), latlonText(), wbAll(), v("section"),
     twpNA ? "" : v("township"), twpNA ? "" : v("twpDir"), rngNA ? "" : v("range"), rngNA ? "" : v("rngDir")];
   return cols.join("\t");
 }
@@ -2702,6 +2716,16 @@ async function onApproval(bytes, name) {
   catch (e) { console.error(e); toast("Couldn't read the approval. Fill the details by hand."); }
   refresh();
 }
+// The second approval only adds its waterbody and MHW elevation; everything else comes from the first.
+async function onApproval2(bytes, name) {
+  clearFrom("approval 2");
+  S.files.approval2 = { bytes, name }; $("nameApproval2").textContent = name; $("dropApproval2").classList.add("has");
+  try { const a = await readApproval(bytes); S.approvalRead2 = a;
+    if (!Object.keys(a).length) toast("Couldn't find the procedural approval in the second PDF. Type the second waterbody by hand.");
+    else { if (a.waterbody) setVal("waterbody2", a.waterbody, "approval 2"); toast("Filled the second waterbody from the second procedural approval"); } }
+  catch (e) { console.error(e); toast("Couldn't read the second approval. Type the second waterbody by hand."); }
+  refresh();
+}
 async function loadMaster(file, quiet) {
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
   const ws = wb.Sheets["Master MHW List"] || wb.Sheets[wb.SheetNames[0]];
@@ -2720,10 +2744,10 @@ function showStep(id) {
   // All steps stay on one page (Kay prefers one scrolling page); kept as a no-op so callers stay simple.
 }
 function resetAll() {
-  S.example = false; $("exampleBanner").hidden = true; S.files = {}; S.survey = null; S.surveyFound = null; S.approvalRead = null; S.placements = []; S.stageCanvas = null;
+  S.example = false; $("exampleBanner").hidden = true; S.files = {}; S.survey = null; S.surveyFound = null; S.approvalRead = null; S.approvalRead2 = null; S.placements = []; S.stageCanvas = null;
   for (const id of [...FIELD_IDS, "receivedDate", "emailSubject", "dbEntryDate", "filingNoticeDate", "commentsDate", "secondDate", "comments"]) { $(id).value = ""; clearSrc(id); }
   $("dropMail").classList.remove("has"); $("nameMail").textContent = "Drop the saved email here, or click to choose";
-  for (const [d, n, t] of [["dropSurvey", "nameSurvey"], ["dropApproval", "nameApproval"], ["dropEmail", "nameEmail"], ["dropSigned", "nameSigned"]]) { $(d).classList.remove("has"); $(n).textContent = "Drop the PDF here or click to choose"; }
+  for (const [d, n, t] of [["dropSurvey", "nameSurvey"], ["dropApproval", "nameApproval"], ["dropApproval2", "nameApproval2"], ["dropEmail", "nameEmail"], ["dropSigned", "nameSigned"]]) { $(d).classList.remove("has"); $(n).textContent = "Drop the PDF here or click to choose"; }
   S.check = Object.fromEntries(CHECKS.map(c => [c.id, null])); S.notes = {}; S.auto = {}; S.signedNof = null; S.nofFiled = false; S.emailRead = false; S.live = {}; if (window.mapApi) window.mapApi.clear();
   $("signInfo").textContent = S.id ? `Signs as ${S.id.cn}.` : "Create your digital ID above to sign.";
   setVal("filingNo", String(S.masterMax + 1), "master list");
@@ -2763,8 +2787,8 @@ async function init() {
   $("btnClear").addEventListener("click", async () => { if (S.folder && canPickFolder()) await masterFromFolder(true); resetAll(); showStep("s1"); });
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-go]"); if (b) showStep(b.dataset.go); });
   $("btnFill").addEventListener("click", async (e) => {
-    const { mail, approval, survey } = S.files; const btn = e.currentTarget;
-    if (!mail && !approval && !survey) { toast("Add the request email, the survey or the procedural approval first."); return; }
+    const { mail, approval, survey, approval2: ap2 } = S.files; const btn = e.currentTarget;
+    if (!mail && !approval && !survey && !ap2) { toast("Add the request email, the survey or the procedural approval first."); return; }
     btn.disabled = true; btn.classList.remove("pulse"); $("fillInfo").textContent = "Reading the files…";
     S.filling = true; document.body.classList.add("filling"); busy("Reading your files, please wait…", 0.02);
     if (S.folder && canPickFolder()) await masterFromFolder(true);
@@ -2772,6 +2796,7 @@ async function init() {
       const keepNo = S.nofFiled ? v("filingNo") : ""; resetAll(); if (keepNo) { setVal("filingNo", keepNo, "master list"); S.nofFiled = true; }
       if (mail) { busy("Reading the request email, please wait…", 0.03); await onEmail(mail.bytes, mail.name); }
       if (approval && !(S.files.approval && S.files.approval.name === approval.name && S.files.approval.bytes.length === approval.bytes.length)) { busy("Reading the procedural approval, please wait…", 0.05); await onApproval(approval.bytes, approval.name); }
+      if (ap2 && !S.files.approval2) { busy("Reading the second procedural approval, please wait…", 0.06); await onApproval2(ap2.bytes, ap2.name); }
       if (survey && !(S.files.survey && S.files.survey.name === survey.name && S.files.survey.bytes.length === survey.bytes.length)) await loadSurvey(survey.bytes, survey.name);
       busy("Checking the map records, please wait…", 0.97); await waitLookups();
       const n = [...document.querySelectorAll(".src[data-src]")].filter(t => !t.hidden).length;
@@ -2797,6 +2822,7 @@ async function init() {
   wireDrop("dropSurvey", "fileSurvey", (f) => queueFile("survey", f, "dropSurvey", "nameSurvey"));
   wireDrop("dropMail", "fileMail", (f) => queueFile("mail", f, "dropMail", "nameMail"));
   wireDrop("dropApproval", "fileApproval", (f) => queueFile("approval", f, "dropApproval", "nameApproval"));
+  wireDrop("dropApproval2", "fileApproval2", (f) => queueFile("approval2", f, "dropApproval2", "nameApproval2"));
   wireDrop("dropEmail", "fileEmail", async (f) => { S.files.email = { bytes: await readFile(f), name: f.name }; $("nameEmail").textContent = f.name; $("dropEmail").classList.add("has"); refresh(); });
   wireDrop("dropSigned", "fileSigned", async (f) => { S.files.signed = { bytes: await readFile(f), name: f.name }; $("nameSigned").textContent = f.name; $("dropSigned").classList.add("has"); refresh(); });
   wireDrop("dropId", "fileId", async (f) => { S.idFile = await readFile(f); if (S.idFile[0] === 0x50 && S.idFile[1] === 0x4b) { const u = unzipStored(S.idFile); if (!u) { showErr("Unzip the backup first, then choose the .pfx file inside."); return; } S.idFile = u; } S.id = null; $("nameId").textContent = f.name; $("dropId").classList.add("has"); $("btnSign").disabled = true;
