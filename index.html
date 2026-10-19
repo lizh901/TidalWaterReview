@@ -1954,9 +1954,12 @@ function autoChecks() {
     else if (vic) { const b = S.live.str && (S.live.str.section || S.live.str.township) ? ` BLM shows ${strLabel(S.live.str)} at the project point;` : ""; say("6", null, `Found a vicinity sketch.${b} section, township and range couldn't be read from the sketch text, so check them on the sketch by eye.`); }
     else if (sv.str) say("6", null, `Section ${sv.str.section}, Township ${strDir(sv.str.township, sv.str.twpDir)}, Range ${strDir(sv.str.range, sv.str.rngDir)} found. The sketch label couldn't be read as text, so check the vicinity sketch by eye.`);
     if ((m = snip(/(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY/, T))) say("7", true, `Found in the title: ${snip(/[A-Z& ]{0,30}(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY/, T)}`);
-    if ((m = snip(/(TIDAL WATER|MEAN HIGH WATER|MEAN LOW WATER) SURVEY[\s\S]{0,120}?COMPL(?:IES|Y|IANCE)\s+WITH\s+(?:THE\s+)?(?:CHAPTER|CH\.?)\s*177[,.]?\s*(?:\S{1,3}\s+)?PART\s*(?:I[IL1]?|2|TWO|11|LL)\b[^.]{0,30}/, T))) say("8", true, `Found: ${m}`);
-    else if ((m = snip(/(?:CHAPTER|CH\.?)\s*177[^.]{0,40}/, T))) say("8", null, `Similar wording found: ${m}`);
+    // Any reference to the statute counts, worded however the surveyor likes (Kay, 2026-10-19).
+    if ((m = snip(/(?:(?:CHAPTER|CH\.?)\s*177[,.]?\s*(?:\S{1,3}\s+)?PART\s*(?:I[IL1]|2|TWO|11|LL)\b|PART\s*(?:I[IL1]|2|TWO|11|LL)\s*(?:OF\s*)?(?:CHAPTER|CH\.?)\s*177\b)[^.]{0,40}/, T))) say("8", true, `Found: ${m}`);
+    else if ((m = snip(/(?:CHAPTER|CH\.?)\s*177[^.]{0,40}/, T))) say("8", null, `Chapter 177 found, but not "Part II": ${m}`);
   }
+  // Benchmarks shown, described and referenced to a datum means at least one is on the survey (Kay, 2026-10-19).
+  if (A["3a"]?.pass !== true && ["3b", "3c", "3d"].every(id => A[id]?.pass === true)) say("3a", true, "Checked: a benchmark is shown and described (items b, c and d).");
   if (S.emailRead || (S.files.survey && S.files.approval)) say("9", true, S.emailRead ? "Checked: received by email." : "Checked: both PDFs supplied.");
   if (sv) say("9a", sv.signed ? true : null, sv.signed ? "Checked: the survey PDF carries a digital signature." : "No digital signature found in the survey PDF.");
   if (S.files.approval) say("9b", true, "Checked: procedural approval PDF supplied.");
