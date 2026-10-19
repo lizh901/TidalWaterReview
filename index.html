@@ -996,7 +996,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
           <p class="lede">Every checklist item that isn't ticked is listed here in your standard wording. Copy it into your reply to the surveyor.</p>
           <div class="copybox">
             <pre id="fixText"></pre>
-            <div class="row"><button class="small" type="button" id="copyFix">Copy email body</button><button class="small" type="button" id="copyFixSubject">Copy subject</button></div>
+            <div class="row"><button class="small" type="button" id="copyFix">Copy email body</button></div>
           </div>
         </div>
         <p class="lede" id="fixNone">No corrections needed: every checklist item is ticked.</p>
@@ -1073,7 +1073,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
         <p class="lede">Reply to the surveyor with the signed Notice of Filing and the reviewed survey attached. Then save that sent email as a PDF for the support documents below.</p>
         <div class="copybox">
           <pre id="mailText"></pre>
-          <div class="row"><button class="small" type="button" id="copyMail">Copy email body</button><button class="small" type="button" id="copySubject">Copy subject</button></div>
+          <div class="row"><button class="small" type="button" id="copyMail">Copy email body</button></div>
         </div>
       </section>
 
@@ -2637,6 +2637,9 @@ function latlonText() {
   const lon = lo.replace(/^-/, ""); const [d, f] = lon.split("."); const lonTxt = d.padStart(3, "0") + (f !== undefined ? "." + f : "");
   return `${la.replace(/^\+/, "")}°\u200eN, ${lonTxt}°\u200eW`;
 }
+const REPLY_LINE = "Please respond with the corrected survey in this same email thread.";
+// HTML copy of the corrections email so the reply line pastes into Outlook in bold.
+function mailBodyHtml() { return escapeHtml(mailBody()).replace(escapeHtml(REPLY_LINE), `<b>${escapeHtml(REPLY_LINE)}</b>`).replace(/\n/g, "<br>"); }
 function mailBody() {
   const who = v("reviewer");
   if (notMet().length) {
@@ -2645,7 +2648,7 @@ function mailBody() {
       const head = c.sub ? `Item ${c.id[0]}.${c.id.slice(1)}) ${parent.text}: ${c.text}` : `Item ${c.id}. ${c.text}`;
       return S.notes[c.id] ? `${head}\n${S.notes[c.id]}` : head;
     }).join("\n\n");
-    return `SURVEY DOES NOT MEET REQUIREMENTS:\n\nWe have reviewed the survey submitted for the above referenced site using the Tidal Water Survey Requirements attached to the Tidal Water Survey Procedural Approval and the following corrections must be made before the survey can be filed in the Mean High Water repository:\n\n${items}\n\nThank you\n\n${who}`;
+    return `SURVEY DOES NOT MEET REQUIREMENTS:\n\nWe have reviewed the survey submitted for the above referenced site using the Tidal Water Survey Requirements attached to the Tidal Water Survey Procedural Approval and the following corrections must be made before the survey can be filed in the Mean High Water repository:\n\n${items}\n\n${REPLY_LINE}\n\nThank you\n\n${who}`;
   }
   return filingBody();
 }
@@ -2687,8 +2690,8 @@ function refresh() {
   $("nmNof").textContent = `${m} Notice of Filing.pdf`; $("nmPkg").textContent = `${m} Support Documents.pdf`;
   const fix = notMet().length > 0;
   $("fixBox").hidden = !fix; $("fixNone").hidden = fix;
-  if (fix) $("fixText").textContent = `To: ${v("email") || "(submitter)"}\nSubject: ${mailSubject()}\n\n${mailBody()}`;
-  $("mailText").textContent = `To: ${v("email") || "(submitter)"}\nSubject: ${mailSubject()}\nAttach: ${m} Notice of Filing.pdf; ${m}.pdf\n\n${filingBody()}`;
+  if (fix) $("fixText").innerHTML = `To: ${escapeHtml(v("email") || "(submitter)")}\n\n${escapeHtml(mailBody()).replace(escapeHtml(REPLY_LINE), `<b>${escapeHtml(REPLY_LINE)}</b>`)}`;
+  $("mailText").textContent = `To: ${v("email") || "(submitter)"}\nAttach: ${m} Notice of Filing.pdf; ${m}.pdf\n\n${filingBody()}`;
   $("masterHint").textContent = accepted() ? "Ready to add. Every checklist item passed." : rej ? "Not until the corrections come back and the survey passes." : "Finish the checklist first. Only accepted surveys go in the master list.";
   $("masterRow").textContent = rej ? "Not yet. Rejected surveys don't go in the master list." : !accepted() ? "Finish the checklist first. Only accepted surveys go in the master list." : masterRow().split("\t").map((c, i) => `${["ID","SURVEYOR","DATE","COUNTY","COMMENT","PSM #","Lat/Lon","Waterbody","Section","Twp.","Twp. Dir.","Rng.","Rng. Dir."][i]}: ${c}`).join("\n");
   $("nofAuto").textContent = S.files.signed ? `Notice of Filing: using ${S.files.signed.name}.` : S.signedNof ? "Notice of Filing: using the copy you signed in step 6." : "Notice of Filing: not signed yet. Sign it in step 6 and it's added here automatically.";
@@ -2707,8 +2710,8 @@ function refresh() {
   if (S.stageCanvas) drawBlock();
   renderChecks();
 }
-async function copyText(text, btn) {
-  try { await navigator.clipboard.writeText(text); toast("Copied"); }
+async function copyText(text, btn, html) {
+  try { if (html && window.ClipboardItem) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]); else await navigator.clipboard.writeText(text); toast("Copied"); }
   catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); toast("Copied"); } catch (e2) { toast("Select the text and copy it"); } ta.remove(); }
 }
 
@@ -2900,10 +2903,8 @@ async function init() {
   document.querySelectorAll("[data-prev]").forEach(b => b.addEventListener("click", () => preview(b.dataset.prev, b)));
   $("copyMail").addEventListener("click", (e) => copyText(filingBody(), e.target));
   $("btnOtherNof").addEventListener("click", () => { $("dropSigned").hidden = false; $("btnOtherNof").hidden = true; });
-  $("copyFix").addEventListener("click", (e) => copyText(mailBody(), e.target));
-  $("copyFixSubject").addEventListener("click", (e) => copyText(mailSubject(), e.target));
+  $("copyFix").addEventListener("click", (e) => copyText(mailBody(), e.target, mailBodyHtml()));
   $("outErr").addEventListener("click", () => { $("outErr").hidden = true; });
-  $("copySubject").addEventListener("click", (e) => copyText(mailSubject(), e.target));
   $("copyMaster").addEventListener("click", (e) => copyText(masterRow(), e.target));
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { if (S.stageCanvas) drawBlock(); }, 120); });
   if (window.claude?.use) window.claude.use("downloads").then(d => { S.downloads = d; });
