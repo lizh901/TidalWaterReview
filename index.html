@@ -2520,7 +2520,7 @@ function savedNote(btn, msg) {
 }
 // Adds one row to the Master MHW List workbook by editing only the sheet XML inside the file, so formatting, filters,
 // validation and every other row stay exactly as they are. cols = [ID, surveyor, date(ISO), county, comment, psm, latlon, waterbody, sec, twp, twpDir, rng, rngDir]
-function masterAppend(bytes, cols, X) {
+function masterAppend(bytes, cols, X, replace) {
   const cfb = X.CFB.read(bytes, { type: "array" });
   const idx = (p) => cfb.FullPaths.findIndex(f => f.replace(/^Root Entry\//, "") === p);
   const txt = (p) => { const i = idx(p); return i < 0 ? null : new TextDecoder().decode(cfb.FileIndex[i].content); };
@@ -2530,9 +2530,12 @@ function masterAppend(bytes, cols, X) {
   const rid = sh[0].match(/r:id="([^"]+)"/)[1]; const tgt = rels.match(new RegExp(`Id="${rid}"[^>]*Target="([^"]+)"`)) || rels.match(new RegExp(`Target="([^"]+)"[^>]*Id="${rid}"`));
   const sheetPath = "xl/" + tgt[1].replace(/^\/?xl\//, ""); let xml = txt(sheetPath); if (!xml) throw new Error("Couldn't open the master list sheet.");
   const id = String(cols[0]).trim();
-  if (new RegExp(`<c r="A\\d+"[^>]*><v>${id}</v></c>`).test(xml)) return { duplicate: true };
+  // A row already holding this filing number is rewritten in place when asked (resaving after a fix), never added twice.
+  const dup = xml.match(new RegExp(`<c r="A(\\d+)"[^>]*><v>${id}</v></c>`));
+  if (dup && !replace) return { duplicate: true, row: +dup[1] };
   let last = 0; xml.replace(/<row r="(\d+)"/g, (_, r) => { last = Math.max(last, +r); });
-  const n = last + 1; const prev = (xml.match(new RegExp(`<row r="${last}"[^>]*>(.*?)</row>`)) || [])[1] || "";
+  if (dup) last = +dup[1];
+  const n = dup ? last : last + 1; const prev = (xml.match(new RegExp(`<row r="${last}"[^>]*>(.*?)</row>`)) || [])[1] || "";
   const styleOf = (col) => (prev.match(new RegExp(`<c r="${col}${last}"([^>]*)>`)) || [, ""])[1].match(/ s="(\d+)"/)?.[1];
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const L = "ABCDEFGHIJKLM";
@@ -2544,6 +2547,7 @@ function masterAppend(bytes, cols, X) {
     return `<c r="${ref}"${sa} t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
   }).join("");
   const rowAttr = (xml.match(new RegExp(`<row r="${last}"([^>]*)>`)) || [, ' spans="1:13"'])[1].replace(/ r="\d+"/, "");
+  if (dup) { put(sheetPath, xml.replace(new RegExp(`<row r="${n}"([^>]*)>.*?</row>`), `<row r="${n}"$1>${cells}</row>`)); return { bytes: X.CFB.write(cfb, { type: "array", fileType: "zip", compression: true }), row: n, replaced: true }; }
   xml = xml.replace("</sheetData>", `<row r="${n}"${rowAttr}>${cells}</row></sheetData>`)
     .replace(/<dimension ref="A1:([A-Z]+)\d+"\/>/, `<dimension ref="A1:$1${n}"/>`).replace(/<autoFilter ref="A1:([A-Z]+)\d+"/, `<autoFilter ref="A1:$1${n}"`);
   put(sheetPath, xml);
@@ -2563,14 +2567,18 @@ async function addToMaster(quiet) {
   if (names.has("~$" + best.n)) { showErr(`${best.n} is open in Excel. Close it there, then try again.`); return false; }
   const orig = new Uint8Array(await best.f.arrayBuffer());
   const rowCols = masterRow().split("\t"); rowCols[2] = v("surveyDate");
-  const r = masterAppend(orig, rowCols, XLSX);
-  if (r.duplicate) { if (!quiet) toast(`${mhw()} is already in ${best.n}.`); S.masterAdded = mhw(); refresh(); return true; }
+  let r = masterAppend(orig, rowCols, XLSX);
+  if (r.duplicate) {
+    if (quiet || !confirm(`${mhw()} is already in ${best.n} (row ${r.row}). Replace that row with the details on this page?`)) { S.masterAdded = mhw(); refresh(); return true; }
+    r = masterAppend(orig, rowCols, XLSX, true);
+  }
   // Keep the version from just before this change, in case anything needs undoing.
   const bdir = await root.getDirectoryHandle("Master list backups", { create: true });
   const bw = await (await bdir.getFileHandle(best.n.replace(/(\.xls[xm])$/i, " (before last app update)$1"), { create: true })).createWritable(); await bw.write(orig); await bw.close();
   const w = await best.h.createWritable(); await w.write(new Uint8Array(r.bytes)); await w.close();
   S.masterAdded = mhw(); noteUsed(v("filingNo")); refresh();
-  toast(`Added ${mhw()} as row ${r.row} of ${best.n}`); S.masterMsg = `Added ${mhw()} as row ${r.row} of ${root.name}\\${best.n}. Open the workbook in Excel to see it.`; refresh(); return true;
+  const did = r.replaced ? "Updated" : "Added";
+  toast(`${did} ${mhw()} as row ${r.row} of ${best.n}`); S.masterMsg = `${did} ${mhw()} as row ${r.row} of ${root.name}\\${best.n}. To change it, fix the details and click Add to master list again.`; refresh(); return true;
 }
 // Opens the browser's print window for a PDF (Edge and Chrome print PDFs from a hidden frame).
 function printPdf(bytes) {
