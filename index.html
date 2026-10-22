@@ -909,7 +909,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
             <input type="file" id="fileApproval2" accept="application/pdf,.pdf" aria-label="Second procedural approval PDF">
           </div>
         </div>
-        <div class="row" style="margin-top:12px"><button class="primary" type="button" id="btnFill">Fill in the details</button><span class="small muted" id="fillInfo">Add your files first, then press this button. The page greys out while it reads them.</span></div>
+        <div class="row" style="margin-top:12px"><button class="primary" type="button" id="btnFill" style="font-size:18px;padding:14px 28px">Go: fill in the forms from these files</button><span class="small muted" id="fillInfo">Add your files first, then press this button. The page greys out while it reads them.</span></div>
         <div class="found" id="found" hidden></div>
       </section>
 
@@ -2834,7 +2834,7 @@ async function init() {
   $("sameSpot").addEventListener("change", () => { if ($("sameSpot").checked && S.placements.length) { const p = S.placements[S.sheet]; S.placements = S.placements.map(() => ({ ...p })); } });
   // Files wait here until "Fill in the details" is pressed, so nothing reads in the background unnoticed.
   const queueFile = async (key, f, drop, label) => { if (S.example) resetAll(); S.files[key] = { bytes: await readFile(f), name: f.name }; $(label).textContent = f.name; $(drop).classList.add("has");
-    $("fillInfo").textContent = "File added. Press Fill in the details when all your files are in."; $("btnFill").classList.add("pulse"); };
+    $("fillInfo").textContent = "File added. Press Go when all your files are in."; $("btnFill").classList.add("pulse"); };
   wireDrop("dropSurvey", "fileSurvey", (f) => queueFile("survey", f, "dropSurvey", "nameSurvey"));
   wireDrop("dropMail", "fileMail", (f) => queueFile("mail", f, "dropMail", "nameMail"));
   wireDrop("dropApproval", "fileApproval", (f) => queueFile("approval", f, "dropApproval", "nameApproval"));
