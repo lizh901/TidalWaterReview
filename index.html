@@ -917,7 +917,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
         <h2><span class="n">2</span>Submission details</h2>
         <p class="lede">Shaded fields were filled in for you, and the tag says where each came from. Check them against the survey and LABINS before you file.</p>
         <div class="grid">
-          <div class="f"><label for="filingNo">MHW filing number <span class="src" data-src="filingNo" hidden></span></label><input type="text" id="filingNo" class="mono" inputmode="numeric"></div>
+          <div class="f"><label for="filingNo">MHW filing number <span class="src" data-src="filingNo" hidden></span></label><input type="text" id="filingNo" class="mono" inputmode="numeric"><p class="small" id="filingWarn" hidden style="color:var(--warn);margin:4px 0 0"></p></div>
           <div class="f"><label for="county">County <span class="src" data-src="county" hidden></span></label><select id="county"></select></div>
           <div class="f"><label for="jobNo">Job number <span class="src" data-src="jobNo" hidden></span></label><input type="text" id="jobNo"></div>
           <div class="f"><label for="surveyDate">Survey date (MHW located) <span class="src" data-src="surveyDate" hidden></span></label><input type="date" id="surveyDate"></div>
@@ -2706,6 +2706,8 @@ function refresh() {
     `<div style="margin-top:6px"><strong>${m}.pdf, also in</strong><br>F:\\BSM\\MHW Section\\MHW Survey Scanned Images\\${yr} MHW Surveys\\</div>`,
     `<div style="margin-top:6px"><strong>${m} Notice of Filing.pdf (signed) in</strong><br>F:\\BSM\\MHW Section\\MHW Notice of Filing\\${yr}\\</div>`,
   ].join("");
+  const fw = $("filingWarn"); fw.hidden = S.masterFromList || S.example || srcOf("filingNo") !== "master list";
+  if (!fw.hidden) fw.innerHTML = canPickFolder() ? `<strong>⚠ Not checked against the master list.</strong> Click <strong>${S.folder ? "Reconnect the folder" : "Choose the MHW Section folder"}</strong> at the top and pick F:\\BSM\\MHW Section so the site can read the next number.` : `<strong>⚠ Not checked against the master list.</strong> Check the next number in the Master MHW List.`;
   $("masterInfo").textContent = `Next free number from ${S.masterSource || "the master list"}: ${S.masterMax + 1}.`;
   if (S.stageCanvas) drawBlock();
   renderChecks();
