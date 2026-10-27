@@ -10,18 +10,19 @@
 /* Layout: a working desk. Steps run down the left in SOP order; outputs stay pinned on the right. */
 :root {
   /* Survey-drawing theme: cool drafting-film gray, charcoal title block, periwinkle, soft apricot accent. */
-  --paper: #ECECF3;
-  --sheet: #FFFFFF;
+  --paper: #D9DBE7;
+  --sheet: #F3F3F8;
   --ink: #1E2426;
   --muted: #59646A;
-  --rule: #D6D8E4;
+  --rule: #C7CADB;
   --navy: #93A6FF;
   --navy-ink: #0E1120;
   --navy-text: #4A55B5;
-  --auto: #E8EBFB;
-  --auto-rule: #AEB7EC;
+  --auto: #E2E5F8;
+  --auto-rule: #A3ADE6;
   --plat: #1B1E2C;
-  --grid: rgba(74, 85, 181, .07);
+  --grid: rgba(74, 85, 181, .08);
+  color-scheme: light;
   --accent: #F2A462;
   --plat-ink: #F2F4F4;
   --plat-muted: #A9B5B8;
@@ -29,28 +30,10 @@
   --ok: #0B5CAD;
   --warn: #4F566B;
   --bad: #B3561C;
-  --chip: #EEEFF6;
+  --chip: #E6E7F0;
   --shadow: 0 1px 2px rgba(22, 26, 46, .06), 0 6px 18px rgba(22, 26, 46, .06);
   --f-body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --paper: #0E1120; --sheet: #161A2D; --ink: #E7E9F3; --muted: #9AA2BF; --rule: #2A3152;
-    --navy: #93A6FF; --navy-ink: #0E1120; --navy-text: #93A6FF; --auto: #1B2448; --auto-rule: #3A4A8C;
-    --ok: #7AB8FF; --warn: #C3C8D8; --bad: #F2A06A; --chip: #20263F;
-    --grid: rgba(147, 166, 255, .05); --accent: #F2A462; --plat: #080A14; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --paper: #0E1120; --sheet: #161A2D; --ink: #E7E9F3; --muted: #9AA2BF; --rule: #2A3152;
-  --navy: #93A6FF; --navy-ink: #0E1120; --navy-text: #93A6FF; --auto: #1B2448; --auto-rule: #3A4A8C;
-  --ok: #7AB8FF; --warn: #C3C8D8; --bad: #F2A06A; --chip: #20263F;
-  --grid: rgba(147, 166, 255, .05); --accent: #F2A462; --plat: #080A14; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
-  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
-  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
