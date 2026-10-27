@@ -29,7 +29,7 @@
   /* Colour-blind safe: pass is blue, problem is orange, "to check" is neutral. Every state also has a symbol and words. */
   --ok: #0B5CAD;
   --warn: #4F566B;
-  --bad: #B3561C;
+  --bad: #A35C12;
   --chip: #DFE1EC;
   --shadow: 0 1px 2px rgba(22, 26, 46, .06), 0 6px 18px rgba(22, 26, 46, .06);
   --f-body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
@@ -120,13 +120,14 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .ck .hint.ok { color: var(--ok); }
 .ck .hint.bad { color: var(--bad); font-weight: 600; }
 .ck textarea { margin-top: 6px; min-height: 44px; font-size: 13.5px; }
-.ck.fail .num, .ck.fail .txt { color: var(--bad); }
-.ck.fail .txt > label { text-decoration: underline wavy var(--bad); text-underline-offset: 3px; }
+.ck.fail { box-shadow: inset 5px 0 0 var(--accent); }
+.ck .hint.bad { display: block; width: fit-content; margin-top: 2px; padding: 0 8px; border-radius: 999px; background: var(--accent); color: var(--ink); }
+.ck.fail .num { color: var(--ink); font-weight: 600; }
 .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .row.space { justify-content: space-between; }
 .result { font-size: 13.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--chip); }
 .result.ok { color: var(--ok); }
-.result.bad { color: var(--bad); }
+.result.bad { background: var(--accent); color: var(--ink); }
 .sheets { display: flex; gap: 6px; flex-wrap: wrap; }
 .sheets button[aria-pressed=true] { background: var(--navy); color: var(--navy-ink); border-color: var(--navy); }
 .stage { position: relative; margin-top: 10px; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: #FFFFFF; touch-action: none; max-width: 100%; }
