@@ -9,28 +9,28 @@
 <style>
 /* Layout: a working desk. Steps run down the left in SOP order; outputs stay pinned on the right. */
 :root {
-  /* Survey-drawing theme: cool drafting-film gray, charcoal title block, periwinkle, soft apricot accent. */
-  --paper: #C6C9DA;
-  --sheet: #E9EAF2;
-  --ink: #1E2426;
+  /* Survey-drawing theme: cool drafting-film gray, charcoal title block, muted slate blue, soft apricot accent. */
+  --paper: #D3D6DD;
+  --sheet: #EEF0F3;
+  --ink: #1E2329;
   --muted: #59646A;
-  --rule: #B6BACF;
-  --navy: #93A6FF;
-  --navy-ink: #0E1120;
-  --navy-text: #4A55B5;
-  --auto: #DADEF5;
-  --auto-rule: #A3ADE6;
+  --rule: #BCC2CC;
+  --navy: #44557F;
+  --navy-ink: #FFFFFF;
+  --navy-text: #3B4A72;
+  --auto: #DFE4EF;
+  --auto-rule: #A7B2CB;
   --plat: #1B1E2C;
-  --grid: rgba(74, 85, 181, .08);
+  --grid: rgba(68, 85, 127, .06);
   color-scheme: light;
-  --accent: #F2A462;
+  --accent: #D8935A;
   --plat-ink: #F2F4F4;
   --plat-muted: #A9B5B8;
   /* Colour-blind safe: pass is blue, problem is orange, "to check" is neutral. Every state also has a symbol and words. */
   --ok: #0B5CAD;
   --warn: #4F566B;
   --bad: #A35C12;
-  --chip: #DFE1EC;
+  --chip: #E2E5EB;
   --shadow: 0 1px 2px rgba(22, 26, 46, .06), 0 6px 18px rgba(22, 26, 46, .06);
   --f-body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -166,17 +166,17 @@ details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 .lookup .no { color: var(--bad); font-weight: 600; }
 @media (max-width: 620px) { .lookup { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 /* Survey-drawing theme */
-body { background-color: var(--paper); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 24px 24px; }
-header.top { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 24px; padding: 18px 22px; border: 0; border: 1px solid var(--rule); border-left: 6px solid var(--accent); border-radius: 6px; box-shadow: var(--shadow); background: var(--sheet) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='300' viewBox='0 0 600 300'%3E%3Cg fill='none' stroke='rgba%2874%2C85%2C181%2C0.12%29' stroke-width='1'%3E%3Cpath d='M-20 250 C80 200 160 270 260 220 S420 150 500 190 S600 240 640 210'/%3E%3Cpath d='M-20 215 C70 170 170 235 265 185 S410 115 505 155 S600 205 640 175'/%3E%3Cpath d='M-20 180 C60 140 180 200 270 150 S400 80 510 120 S600 170 640 140'/%3E%3Cpath d='M-20 145 C50 110 190 165 275 115 S390 45 515 85 S600 135 640 105'/%3E%3Cpath d='M-20 110 C40 80 200 130 280 80 S380 10 520 50 S600 100 640 70'/%3E%3Cellipse cx='120' cy='60' rx='60' ry='26'/%3E%3Cellipse cx='120' cy='60' rx='34' ry='14'/%3E%3Cellipse cx='120' cy='60' rx='12' ry='5'/%3E%3C/g%3E%3C/svg%3E") center / cover no-repeat; color: var(--ink); margin-top: 4px; }
+body { background-color: var(--paper); }
+header.top { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 24px; padding: 18px 22px; border: 0; border: 1px solid var(--rule); border-left: 6px solid var(--accent); border-radius: 6px; box-shadow: var(--shadow); background: var(--sheet) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='300' viewBox='0 0 600 300'%3E%3Cg fill='none' stroke='rgba%2868%2C85%2C127%2C0.10%29' stroke-width='1'%3E%3Cpath d='M-20 250 C80 200 160 270 260 220 S420 150 500 190 S600 240 640 210'/%3E%3Cpath d='M-20 215 C70 170 170 235 265 185 S410 115 505 155 S600 205 640 175'/%3E%3Cpath d='M-20 180 C60 140 180 200 270 150 S400 80 510 120 S600 170 640 140'/%3E%3Cpath d='M-20 145 C50 110 190 165 275 115 S390 45 515 85 S600 135 640 105'/%3E%3Cpath d='M-20 110 C40 80 200 130 280 80 S380 10 520 50 S600 100 640 70'/%3E%3Cellipse cx='120' cy='60' rx='60' ry='26'/%3E%3Cellipse cx='120' cy='60' rx='34' ry='14'/%3E%3Cellipse cx='120' cy='60' rx='12' ry='5'/%3E%3C/g%3E%3C/svg%3E") center / cover no-repeat; color: var(--ink); margin-top: 4px; }
 header.top h1 { display: flex; align-items: center; gap: 14px; color: var(--ink); }
 header.top h1 > span > span { color: var(--navy-text); }
-header.top .ts { width: 150px; height: auto; display: block; margin: -8px 0; }
+header.top .ts { width: 60px; height: 60px; display: block; }
 header.top p { color: var(--muted); margin-top: 4px; }
 header.top .linkish { color: var(--navy-text); }
 header.top .plat { display: flex; align-items: flex-end; gap: 18px; color: var(--muted); }
 header.top .plat .na { color: var(--accent); }
 header.top .plat svg { display: block; }
-@media (max-width: 760px) { header.top { grid-template-columns: 1fr; } header.top .plat { display: none; } }
+@media (max-width: 760px) { header.top { grid-template-columns: auto minmax(0, 1fr); } header.top .ts { width: 44px; height: 44px; } header.top .plat { display: none; } }
 section.step { border-top: 4px solid var(--navy); border-radius: 2px 2px 8px 8px; }
 section.step h2 .n { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 999px; background: var(--navy); color: var(--navy-ink); font-weight: 600; font-size: 13px; box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--accent); align-self: center; }
 /* Leaflet 1.9.4 */
@@ -853,7 +853,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
 
 <div class="wrap">
   <header class="top">
-    <div><h1><span><span>Tidal Water Survey</span> Submission Review</span></h1>
+    <svg class="ts" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" fill="none" stroke="#3B4A72" stroke-width="3.5"/><path d="M50 14 L58 50 L50 86 L42 50 Z" fill="#3B4A72"/><path d="M50 14 L58 50 L42 50 Z" fill="#D8935A"/><path d="M14 50 L50 44 L86 50 L50 56 Z" fill="#8A9BC4"/><circle cx="50" cy="50" r="3.5" fill="#EEF0F3"/></svg><div><h1><span><span>Tidal Water Survey</span> Submission Review</span></h1>
     <p>Bureau of Survey and Mapping · Mean High Water repository · forms as of 10/2026 · <button class="linkish" id="btnExample" type="button">See a filled-in example</button></p></div>
     <div class="plat" aria-hidden="true">
       <svg width="210" height="46" viewBox="0 0 210 46" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor"><text x="4" y="12" opacity=".75">N 89°59'59" E  100.00'</text><path d="M4 18 H206" stroke="currentColor" stroke-width="1.2" stroke-dasharray="10 3 2 3"/><circle cx="4" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="206" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><g transform="translate(4 28)"><rect width="50" height="5" fill="currentColor"/><rect x="50" width="50" height="5" fill="none" stroke="currentColor"/><rect x="100" width="50" height="5" fill="currentColor"/><rect x="150" width="50" height="5" fill="none" stroke="currentColor"/><text y="15">0</text><text x="100" y="15" text-anchor="middle">50</text><text x="200" y="15" text-anchor="end">100 FT</text></g></svg>
