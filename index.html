@@ -9,44 +9,45 @@
 <style>
 /* Layout: a working desk. Steps run down the left in SOP order; outputs stay pinned on the right. */
 :root {
-  /* Survey-drawing theme: cool drafting-film gray, charcoal title block, deep tidal teal. */
-  --paper: #E8ECEB;
+  /* Survey-drawing theme: cool drafting-film gray, charcoal title block, dusty purple, soft orange accent. */
+  --paper: #ECEBEF;
   --sheet: #FFFFFF;
   --ink: #1E2426;
   --muted: #59646A;
-  --rule: #D2D9D9;
-  --navy: #0E5E61;
+  --rule: #D8D6DF;
+  --navy: #54428E;
   --navy-ink: #FFFFFF;
-  --auto: #E2EFEE;
-  --auto-rule: #93C2BF;
-  --plat: #20282B;
-  --grid: rgba(14, 94, 97, .07);
+  --auto: #ECE8F6;
+  --auto-rule: #B9ADDB;
+  --plat: #25222E;
+  --grid: rgba(84, 66, 142, .07);
+  --accent: #D9894E;
   --plat-ink: #F2F4F4;
   --plat-muted: #A9B5B8;
   /* Colour-blind safe: pass is blue, problem is orange, "to check" is neutral. Every state also has a symbol and words. */
   --ok: #0B5CAD;
   --warn: #4F566B;
-  --bad: #C24E00;
-  --chip: #EDF1F1;
+  --bad: #B3561C;
+  --chip: #F0EEF4;
   --shadow: 0 1px 2px rgba(22, 26, 46, .06), 0 6px 18px rgba(22, 26, 46, .06);
   --f-body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #121718; --sheet: #1A2123; --ink: #E6EBEB; --muted: #9FADB0; --rule: #2C3739;
-    --navy: #6FC7C2; --navy-ink: #101516; --auto: #17302F; --auto-rule: #2F6461;
-    --ok: #7AB8FF; --warn: #C3C8D8; --bad: #FF9E52; --chip: #222B2D;
-    --grid: rgba(111, 199, 194, .05); --plat: #0B0F10; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
+    --paper: #141318; --sheet: #1C1B22; --ink: #EAE8EF; --muted: #A9A5B5; --rule: #322F3B;
+    --navy: #B7A7EC; --navy-ink: #141318; --auto: #262036; --auto-rule: #4F4378;
+    --ok: #7AB8FF; --warn: #C3C8D8; --bad: #F2A06A; --chip: #25232C;
+    --grid: rgba(183, 167, 236, .05); --accent: #EBA572; --plat: #0E0D12; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #121718; --sheet: #1A2123; --ink: #E6EBEB; --muted: #9FADB0; --rule: #2C3739;
-  --navy: #6FC7C2; --navy-ink: #101516; --auto: #17302F; --auto-rule: #2F6461;
-  --ok: #7AB8FF; --warn: #C3C8D8; --bad: #FF9E52; --chip: #222B2D;
-  --grid: rgba(111, 199, 194, .05); --plat: #0B0F10; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
+  --paper: #141318; --sheet: #1C1B22; --ink: #EAE8EF; --muted: #A9A5B5; --rule: #322F3B;
+  --navy: #B7A7EC; --navy-ink: #141318; --auto: #262036; --auto-rule: #4F4378;
+  --ok: #7AB8FF; --warn: #C3C8D8; --bad: #F2A06A; --chip: #25232C;
+  --grid: rgba(183, 167, 236, .05); --accent: #EBA572; --plat: #0E0D12; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
   color-scheme: dark;
 }
@@ -183,11 +184,13 @@ details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 body { background-color: var(--paper); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 24px 24px; }
 header.top { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 24px; padding: 18px 22px; border: 0; outline: 1px solid var(--plat); outline-offset: 3px; border-radius: 2px; background: var(--plat) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='300' viewBox='0 0 600 300'%3E%3Cg fill='none' stroke='rgba%28255%2C255%2C255%2C0.10%29' stroke-width='1'%3E%3Cpath d='M-20 250 C80 200 160 270 260 220 S420 150 500 190 S600 240 640 210'/%3E%3Cpath d='M-20 215 C70 170 170 235 265 185 S410 115 505 155 S600 205 640 175'/%3E%3Cpath d='M-20 180 C60 140 180 200 270 150 S400 80 510 120 S600 170 640 140'/%3E%3Cpath d='M-20 145 C50 110 190 165 275 115 S390 45 515 85 S600 135 640 105'/%3E%3Cpath d='M-20 110 C40 80 200 130 280 80 S380 10 520 50 S600 100 640 70'/%3E%3Cellipse cx='120' cy='60' rx='60' ry='26'/%3E%3Cellipse cx='120' cy='60' rx='34' ry='14'/%3E%3Cellipse cx='120' cy='60' rx='12' ry='5'/%3E%3C/g%3E%3C/svg%3E") center / cover no-repeat; color: var(--plat-ink); margin-top: 4px; }
 header.top h1 { display: flex; align-items: center; gap: 12px; color: var(--plat-ink); }
-header.top h1 > span > span { color: #7FD3CE; }
+header.top h1 > span > span { color: var(--accent); }
 header.top h1 .ts { width: 38px; height: 44px; flex: none; color: var(--plat-ink); }
 header.top p { color: var(--plat-muted); margin-top: 4px; }
-header.top .linkish { color: #9FE0DB; }
+header.top .linkish { color: #F0C29E; }
 header.top .plat { display: flex; align-items: flex-end; gap: 18px; color: var(--plat-ink); }
+header.top .plat .na { color: var(--accent); }
+header.top h1 .ts { color: var(--accent) !important; }
 header.top .plat svg { display: block; }
 @media (max-width: 760px) { header.top { grid-template-columns: 1fr; } header.top .plat { display: none; } }
 section.step { border-top: 4px solid var(--navy); border-radius: 2px 2px 8px 8px; }
@@ -870,7 +873,7 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
     <p>Bureau of Survey and Mapping · Mean High Water repository · forms as of 10/2026 · <button class="linkish" id="btnExample" type="button">See a filled-in example</button></p></div>
     <div class="plat" aria-hidden="true">
       <svg width="210" height="46" viewBox="0 0 210 46" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor"><text x="4" y="12" opacity=".75">N 89°59'59" E  100.00'</text><path d="M4 18 H206" stroke="currentColor" stroke-width="1.2" stroke-dasharray="10 3 2 3"/><circle cx="4" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="206" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><g transform="translate(4 28)"><rect width="50" height="5" fill="currentColor"/><rect x="50" width="50" height="5" fill="none" stroke="currentColor"/><rect x="100" width="50" height="5" fill="currentColor"/><rect x="150" width="50" height="5" fill="none" stroke="currentColor"/><text y="15">0</text><text x="100" y="15" text-anchor="middle">50</text><text x="200" y="15" text-anchor="end">100 FT</text></g></svg>
-      <svg width="26" height="46" viewBox="0 0 26 46" aria-hidden="true"><path d="M13 4 L21 34 L13 28 L5 34 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M13 4 L13 28 L5 34 Z" fill="currentColor"/><text x="13" y="45" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="currentColor">N</text></svg>
+      <svg class="na" width="26" height="46" viewBox="0 0 26 46" aria-hidden="true"><path d="M13 4 L21 34 L13 28 L5 34 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M13 4 L13 28 L5 34 Z" fill="currentColor"/><text x="13" y="45" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="currentColor">N</text></svg>
     </div>
   </header>
 
