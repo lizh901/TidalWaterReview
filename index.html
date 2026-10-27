@@ -9,44 +9,44 @@
 <style>
 /* Layout: a working desk. Steps run down the left in SOP order; outputs stay pinned on the right. */
 :root {
-  /* Surveying theme: field-book paper, survey blue, instrument yellow for accents only. */
-  --paper: #F1ECDF;
-  --sheet: #FFFDF8;
-  --ink: #1C2230;
-  --muted: #5E6472;
-  --rule: #DDD5C2;
-  --navy: #1D3B5C;
+  /* Survey-drawing theme: cool drafting-film gray, charcoal title block, deep tidal teal. */
+  --paper: #E8ECEB;
+  --sheet: #FFFFFF;
+  --ink: #1E2426;
+  --muted: #59646A;
+  --rule: #D2D9D9;
+  --navy: #0E5E61;
   --navy-ink: #FFFFFF;
-  --auto: #E6EDF5;
-  --auto-rule: #A9BED6;
-  --accent: #F2B705;
-  --accent-ink: #1C2230;
-  --grid: rgba(29, 59, 92, .06);
-  --contour: rgba(29, 59, 92, .13);
+  --auto: #E2EFEE;
+  --auto-rule: #93C2BF;
+  --plat: #20282B;
+  --grid: rgba(14, 94, 97, .07);
+  --plat-ink: #F2F4F4;
+  --plat-muted: #A9B5B8;
   /* Colour-blind safe: pass is blue, problem is orange, "to check" is neutral. Every state also has a symbol and words. */
   --ok: #0B5CAD;
   --warn: #4F566B;
   --bad: #C24E00;
-  --chip: #EEE8DA;
+  --chip: #EDF1F1;
   --shadow: 0 1px 2px rgba(22, 26, 46, .06), 0 6px 18px rgba(22, 26, 46, .06);
   --f-body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #12161C; --sheet: #1A2029; --ink: #E8E6DF; --muted: #A3A9B5; --rule: #2E3644;
-    --navy: #8FB4E0; --navy-ink: #12161C; --auto: #1C2A3B; --auto-rule: #3B5578;
-    --ok: #7AB8FF; --warn: #C3C8D8; --bad: #FF9E52; --chip: #232A35;
-    --accent: #F2B705; --accent-ink: #12161C; --grid: rgba(143, 180, 224, .05); --contour: rgba(143, 180, 224, .12);
+    --paper: #121718; --sheet: #1A2123; --ink: #E6EBEB; --muted: #9FADB0; --rule: #2C3739;
+    --navy: #6FC7C2; --navy-ink: #101516; --auto: #17302F; --auto-rule: #2F6461;
+    --ok: #7AB8FF; --warn: #C3C8D8; --bad: #FF9E52; --chip: #222B2D;
+    --grid: rgba(111, 199, 194, .05); --plat: #0B0F10; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #12161C; --sheet: #1A2029; --ink: #E8E6DF; --muted: #A3A9B5; --rule: #2E3644;
-  --navy: #8FB4E0; --navy-ink: #12161C; --auto: #1C2A3B; --auto-rule: #3B5578;
-  --ok: #7AB8FF; --warn: #C3C8D8; --bad: #FF9E52; --chip: #232A35;
-  --accent: #F2B705; --accent-ink: #12161C; --grid: rgba(143, 180, 224, .05); --contour: rgba(143, 180, 224, .12);
+  --paper: #121718; --sheet: #1A2123; --ink: #E6EBEB; --muted: #9FADB0; --rule: #2C3739;
+  --navy: #6FC7C2; --navy-ink: #101516; --auto: #17302F; --auto-rule: #2F6461;
+  --ok: #7AB8FF; --warn: #C3C8D8; --bad: #FF9E52; --chip: #222B2D;
+  --grid: rgba(111, 199, 194, .05); --plat: #0B0F10; --plat-ink: #F2F4F4; --plat-muted: #A9B5B8;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.25);
   color-scheme: dark;
 }
@@ -179,18 +179,19 @@ details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
 .lookup .ok { color: var(--ok); font-weight: 600; }
 .lookup .no { color: var(--bad); font-weight: 600; }
 @media (max-width: 620px) { .lookup { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-/* Surveying theme */
+/* Survey-drawing theme */
 body { background-color: var(--paper); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 24px 24px; }
-header.top { position: relative; align-items: center; border-bottom: 0; padding: 18px 20px 22px; margin: 0 -20px; background: var(--sheet); border-radius: 8px 8px 0 0; overflow: hidden; }
-header.top::before { content: ""; position: absolute; inset: 0; background-color: var(--contour); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='120' viewBox='0 0 520 120'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.2'%3E%3Cpath d='M-10 96 C60 70 110 104 180 82 S300 40 360 62 S470 98 530 70'/%3E%3Cpath d='M-10 78 C55 54 115 88 185 64 S295 24 362 44 S468 80 530 52'/%3E%3Cpath d='M-10 60 C50 38 120 72 190 46 S290 8 364 26 S466 62 530 34'/%3E%3Cpath d='M-10 42 C45 22 125 56 195 28 S285 -8 366 8 S464 44 530 16'/%3E%3Cellipse cx='420' cy='92' rx='34' ry='12'/%3E%3Cellipse cx='420' cy='92' rx='18' ry='6'/%3E%3C/g%3E%3C/svg%3E") repeat-x left center / 520px 120px; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='120' viewBox='0 0 520 120'%3E%3Cg fill='none' stroke='%23000' stroke-width='1.2'%3E%3Cpath d='M-10 96 C60 70 110 104 180 82 S300 40 360 62 S470 98 530 70'/%3E%3Cpath d='M-10 78 C55 54 115 88 185 64 S295 24 362 44 S468 80 530 52'/%3E%3Cpath d='M-10 60 C50 38 120 72 190 46 S290 8 364 26 S466 62 530 34'/%3E%3Cpath d='M-10 42 C45 22 125 56 195 28 S285 -8 366 8 S464 44 530 16'/%3E%3Cellipse cx='420' cy='92' rx='34' ry='12'/%3E%3Cellipse cx='420' cy='92' rx='18' ry='6'/%3E%3C/g%3E%3C/svg%3E") repeat-x left center / 520px 120px; pointer-events: none; }
-header.top::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 7px; background: repeating-linear-gradient(90deg, var(--accent) 0 30px, var(--ink) 30px 60px); }
-header.top > * { position: relative; }
-header.top h1 { display: flex; align-items: center; gap: 12px; }
-header.top h1 .bm { width: 40px; height: 40px; flex: none; color: var(--navy); }
-.step h2 .n { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 999px; background: var(--navy); color: var(--navy-ink); font-weight: 600; font-size: 13px; box-shadow: 0 0 0 2px var(--sheet), 0 0 0 4px var(--accent); align-self: center; }
-section.step { border-top: 4px solid var(--navy); }
-#btnFill { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
-#btnFill:hover { border-color: var(--ink); }
+header.top { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 24px; padding: 18px 22px; border: 0; outline: 1px solid var(--plat); outline-offset: 3px; border-radius: 2px; background: var(--plat) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='300' viewBox='0 0 600 300'%3E%3Cg fill='none' stroke='rgba%28255%2C255%2C255%2C0.10%29' stroke-width='1'%3E%3Cpath d='M-20 250 C80 200 160 270 260 220 S420 150 500 190 S600 240 640 210'/%3E%3Cpath d='M-20 215 C70 170 170 235 265 185 S410 115 505 155 S600 205 640 175'/%3E%3Cpath d='M-20 180 C60 140 180 200 270 150 S400 80 510 120 S600 170 640 140'/%3E%3Cpath d='M-20 145 C50 110 190 165 275 115 S390 45 515 85 S600 135 640 105'/%3E%3Cpath d='M-20 110 C40 80 200 130 280 80 S380 10 520 50 S600 100 640 70'/%3E%3Cellipse cx='120' cy='60' rx='60' ry='26'/%3E%3Cellipse cx='120' cy='60' rx='34' ry='14'/%3E%3Cellipse cx='120' cy='60' rx='12' ry='5'/%3E%3C/g%3E%3C/svg%3E") center / cover no-repeat; color: var(--plat-ink); margin-top: 4px; }
+header.top h1 { display: flex; align-items: center; gap: 12px; color: var(--plat-ink); }
+header.top h1 > span > span { color: #7FD3CE; }
+header.top h1 .ts { width: 38px; height: 44px; flex: none; color: var(--plat-ink); }
+header.top p { color: var(--plat-muted); margin-top: 4px; }
+header.top .linkish { color: #9FE0DB; }
+header.top .plat { display: flex; align-items: flex-end; gap: 18px; color: var(--plat-ink); }
+header.top .plat svg { display: block; }
+@media (max-width: 760px) { header.top { grid-template-columns: 1fr; } header.top .plat { display: none; } }
+section.step { border-top: 4px solid var(--navy); border-radius: 2px 2px 8px 8px; }
+section.step h2 .n { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 999px; background: var(--navy); color: var(--navy-ink); font-weight: 600; font-size: 13px; box-shadow: 0 0 0 2px var(--sheet), 0 0 0 3.5px var(--navy); align-self: center; }
 /* Leaflet 1.9.4 */
 /* required styles */
 
@@ -865,8 +866,12 @@ body.filling #s1 .drop { pointer-events: none; opacity: .6; }
 
 <div class="wrap">
   <header class="top">
-    <h1><svg class="bm" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="2.5"/><circle cx="20" cy="20" r="13" fill="none" stroke="currentColor" stroke-width="1"/><path d="M20 10 L28 25 H12 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M20 15 V22 M16.5 18.5 H23.5" stroke="currentColor" stroke-width="1.6"/></svg><span><span>MHW</span> Submission Review</span></h1>
-    <p>Bureau of Survey and Mapping · Mean High Water repository · forms as of 10/2026 · <button class="linkish" id="btnExample" type="button">See a filled-in example</button></p>
+    <div><h1><svg class="ts" viewBox="0 0 38 44" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="11" y="3" width="16" height="12" rx="2"/><circle cx="19" cy="9" r="3"/><path d="M27 7h5M19 15v4M13 19h12M19 19l-12 23M19 19v23M19 19l12 23"/></svg><span><span>MHW</span> Submission Review</span></h1>
+    <p>Bureau of Survey and Mapping · Mean High Water repository · forms as of 10/2026 · <button class="linkish" id="btnExample" type="button">See a filled-in example</button></p></div>
+    <div class="plat" aria-hidden="true">
+      <svg width="210" height="46" viewBox="0 0 210 46" font-family="IBM Plex Mono, monospace" font-size="9" fill="currentColor"><text x="4" y="12" opacity=".75">N 89°59'59" E  100.00'</text><path d="M4 18 H206" stroke="currentColor" stroke-width="1.2" stroke-dasharray="10 3 2 3"/><circle cx="4" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="206" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><g transform="translate(4 28)"><rect width="50" height="5" fill="currentColor"/><rect x="50" width="50" height="5" fill="none" stroke="currentColor"/><rect x="100" width="50" height="5" fill="currentColor"/><rect x="150" width="50" height="5" fill="none" stroke="currentColor"/><text y="15">0</text><text x="100" y="15" text-anchor="middle">50</text><text x="200" y="15" text-anchor="end">100 FT</text></g></svg>
+      <svg width="26" height="46" viewBox="0 0 26 46" aria-hidden="true"><path d="M13 4 L21 34 L13 28 L5 34 Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M13 4 L13 28 L5 34 Z" fill="currentColor"/><text x="13" y="45" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="600" fill="currentColor">N</text></svg>
+    </div>
   </header>
 
   <div class="busy" id="busy" role="status" aria-live="polite" hidden><div id="busyTxt">Reading the survey…</div><div class="busybar"><span id="busyBar"></span></div></div>
